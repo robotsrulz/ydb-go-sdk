@@ -38,7 +38,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableInitDoneInfo)
+			var r, r1 func(TableInitDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -73,7 +73,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableCloseDoneInfo)
+			var r, r1 func(TableCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -108,7 +108,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableDoIntermediateInfo) func(TableDoDoneInfo)
+			var r, r1 func(TableDoIntermediateInfo) func(TableDoDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -123,7 +123,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 						}
 					}()
 				}
-				var r2, r3 func(TableDoDoneInfo)
+				var r2, r3 func(TableDoDoneInfo) 
 				if r != nil {
 					r2 = r(info)
 				}
@@ -159,7 +159,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableDoTxIntermediateInfo) func(TableDoTxDoneInfo)
+			var r, r1 func(TableDoTxIntermediateInfo) func(TableDoTxDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -174,7 +174,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 						}
 					}()
 				}
-				var r2, r3 func(TableDoTxDoneInfo)
+				var r2, r3 func(TableDoTxDoneInfo) 
 				if r != nil {
 					r2 = r(info)
 				}
@@ -210,7 +210,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableCreateSessionIntermediateInfo) func(TableCreateSessionDoneInfo)
+			var r, r1 func(TableCreateSessionIntermediateInfo) func(TableCreateSessionDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -225,7 +225,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 						}
 					}()
 				}
-				var r2, r3 func(TableCreateSessionDoneInfo)
+				var r2, r3 func(TableCreateSessionDoneInfo) 
 				if r != nil {
 					r2 = r(info)
 				}
@@ -261,7 +261,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionNewDoneInfo)
+			var r, r1 func(TableSessionNewDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -296,7 +296,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionDeleteDoneInfo)
+			var r, r1 func(TableSessionDeleteDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -331,7 +331,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableKeepAliveDoneInfo)
+			var r, r1 func(TableKeepAliveDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -366,7 +366,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TablePrepareDataQueryDoneInfo)
+			var r, r1 func(TablePrepareDataQueryDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -401,7 +401,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableExecuteDataQueryDoneInfo)
+			var r, r1 func(TableExecuteDataQueryDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -436,7 +436,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableExplainQueryDoneInfo)
+			var r, r1 func(TableExplainQueryDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -471,7 +471,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionQueryStreamExecuteIntermediateInfo) func(TableSessionQueryStreamExecuteDoneInfo)
+			var r, r1 func(TableSessionQueryStreamExecuteIntermediateInfo) func(TableSessionQueryStreamExecuteDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -486,7 +486,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 						}
 					}()
 				}
-				var r2, r3 func(TableSessionQueryStreamExecuteDoneInfo)
+				var r2, r3 func(TableSessionQueryStreamExecuteDoneInfo) 
 				if r != nil {
 					r2 = r(t)
 				}
@@ -522,7 +522,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionQueryStreamReadIntermediateInfo) func(TableSessionQueryStreamReadDoneInfo)
+			var r, r1 func(TableSessionQueryStreamReadIntermediateInfo) func(TableSessionQueryStreamReadDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -537,7 +537,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 						}
 					}()
 				}
-				var r2, r3 func(TableSessionQueryStreamReadDoneInfo)
+				var r2, r3 func(TableSessionQueryStreamReadDoneInfo) 
 				if r != nil {
 					r2 = r(t)
 				}
@@ -573,7 +573,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionTransactionBeginDoneInfo)
+			var r, r1 func(TableSessionTransactionBeginDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -608,7 +608,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionTransactionCommitDoneInfo)
+			var r, r1 func(TableSessionTransactionCommitDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -643,7 +643,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TableSessionTransactionRollbackDoneInfo)
+			var r, r1 func(TableSessionTransactionRollbackDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -697,7 +697,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TablePoolSessionNewDoneInfo)
+			var r, r1 func(TablePoolSessionNewDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -732,7 +732,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TablePoolSessionCloseDoneInfo)
+			var r, r1 func(TablePoolSessionCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -767,7 +767,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TablePoolPutDoneInfo)
+			var r, r1 func(TablePoolPutDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -802,7 +802,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TablePoolGetDoneInfo)
+			var r, r1 func(TablePoolGetDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}
@@ -837,7 +837,7 @@ func (t Table) Compose(x Table, opts ...TableComposeOption) (ret Table) {
 					}
 				}()
 			}
-			var r, r1 func(TablePoolWaitDoneInfo)
+			var r, r1 func(TablePoolWaitDoneInfo) 
 			if h1 != nil {
 				r = h1(t)
 			}

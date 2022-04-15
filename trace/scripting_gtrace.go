@@ -38,7 +38,7 @@ func (t Scripting) Compose(x Scripting, opts ...ScriptingComposeOption) (ret Scr
 					}
 				}()
 			}
-			var r, r1 func(ScriptingExecuteDoneInfo)
+			var r, r1 func(ScriptingExecuteDoneInfo) 
 			if h1 != nil {
 				r = h1(s)
 			}
@@ -73,7 +73,7 @@ func (t Scripting) Compose(x Scripting, opts ...ScriptingComposeOption) (ret Scr
 					}
 				}()
 			}
-			var r, r1 func(ScriptingStreamExecuteIntermediateInfo) func(ScriptingStreamExecuteDoneInfo)
+			var r, r1 func(ScriptingStreamExecuteIntermediateInfo) func(ScriptingStreamExecuteDoneInfo) 
 			if h1 != nil {
 				r = h1(s)
 			}
@@ -88,7 +88,7 @@ func (t Scripting) Compose(x Scripting, opts ...ScriptingComposeOption) (ret Scr
 						}
 					}()
 				}
-				var r2, r3 func(ScriptingStreamExecuteDoneInfo)
+				var r2, r3 func(ScriptingStreamExecuteDoneInfo) 
 				if r != nil {
 					r2 = r(s)
 				}
@@ -124,7 +124,7 @@ func (t Scripting) Compose(x Scripting, opts ...ScriptingComposeOption) (ret Scr
 					}
 				}()
 			}
-			var r, r1 func(ScriptingExplainDoneInfo)
+			var r, r1 func(ScriptingExplainDoneInfo) 
 			if h1 != nil {
 				r = h1(s)
 			}
@@ -159,7 +159,7 @@ func (t Scripting) Compose(x Scripting, opts ...ScriptingComposeOption) (ret Scr
 					}
 				}()
 			}
-			var r, r1 func(ScriptingCloseDoneInfo)
+			var r, r1 func(ScriptingCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(s)
 			}

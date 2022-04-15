@@ -38,7 +38,7 @@ func (t Discovery) Compose(x Discovery, opts ...DiscoveryComposeOption) (ret Dis
 					}
 				}()
 			}
-			var r, r1 func(DiscoveryDiscoverDoneInfo)
+			var r, r1 func(DiscoveryDiscoverDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -73,7 +73,7 @@ func (t Discovery) Compose(x Discovery, opts ...DiscoveryComposeOption) (ret Dis
 					}
 				}()
 			}
-			var r, r1 func(DiscoveryWhoAmIDoneInfo)
+			var r, r1 func(DiscoveryWhoAmIDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}

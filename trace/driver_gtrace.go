@@ -38,7 +38,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverInitDoneInfo)
+			var r, r1 func(DriverInitDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -73,7 +73,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverCloseDoneInfo)
+			var r, r1 func(DriverCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -108,7 +108,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetReadDoneInfo)
+			var r, r1 func(DriverNetReadDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -143,7 +143,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetWriteDoneInfo)
+			var r, r1 func(DriverNetWriteDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -178,7 +178,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetDialDoneInfo)
+			var r, r1 func(DriverNetDialDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -213,7 +213,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetCloseDoneInfo)
+			var r, r1 func(DriverNetCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -248,7 +248,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverResolveDoneInfo)
+			var r, r1 func(DriverResolveDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -283,7 +283,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnStateChangeDoneInfo)
+			var r, r1 func(DriverConnStateChangeDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -318,7 +318,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnInvokeDoneInfo)
+			var r, r1 func(DriverConnInvokeDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -353,7 +353,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnNewStreamRecvInfo) func(DriverConnNewStreamDoneInfo)
+			var r, r1 func(DriverConnNewStreamRecvInfo) func(DriverConnNewStreamDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -368,7 +368,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 						}
 					}()
 				}
-				var r2, r3 func(DriverConnNewStreamDoneInfo)
+				var r2, r3 func(DriverConnNewStreamDoneInfo) 
 				if r != nil {
 					r2 = r(d)
 				}
@@ -404,7 +404,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnTakeDoneInfo)
+			var r, r1 func(DriverConnTakeDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -477,7 +477,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnParkDoneInfo)
+			var r, r1 func(DriverConnParkDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -512,7 +512,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnCloseDoneInfo)
+			var r, r1 func(DriverConnCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -547,7 +547,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnReleaseDoneInfo)
+			var r, r1 func(DriverConnReleaseDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -582,7 +582,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterInitDoneInfo)
+			var r, r1 func(DriverClusterInitDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -617,7 +617,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterCloseDoneInfo)
+			var r, r1 func(DriverClusterCloseDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -652,7 +652,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterGetDoneInfo)
+			var r, r1 func(DriverClusterGetDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -687,7 +687,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterInsertDoneInfo)
+			var r, r1 func(DriverClusterInsertDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -722,7 +722,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterRemoveDoneInfo)
+			var r, r1 func(DriverClusterRemoveDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -757,7 +757,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverPessimizeNodeDoneInfo)
+			var r, r1 func(DriverPessimizeNodeDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -792,7 +792,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverRepeaterTickDoneInfo)
+			var r, r1 func(DriverRepeaterTickDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -827,7 +827,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverGetCredentialsDoneInfo)
+			var r, r1 func(DriverGetCredentialsDoneInfo) 
 			if h1 != nil {
 				r = h1(d)
 			}

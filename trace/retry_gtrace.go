@@ -38,7 +38,7 @@ func (t Retry) Compose(x Retry, opts ...RetryComposeOption) (ret Retry) {
 					}
 				}()
 			}
-			var r1, r2 func(RetryLoopIntermediateInfo) func(RetryLoopDoneInfo)
+			var r1, r2 func(RetryLoopIntermediateInfo) func(RetryLoopDoneInfo) 
 			if h1 != nil {
 				r1 = h1(r)
 			}
@@ -53,7 +53,7 @@ func (t Retry) Compose(x Retry, opts ...RetryComposeOption) (ret Retry) {
 						}
 					}()
 				}
-				var r3, r4 func(RetryLoopDoneInfo)
+				var r3, r4 func(RetryLoopDoneInfo) 
 				if r1 != nil {
 					r3 = r1(r)
 				}
