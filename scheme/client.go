@@ -18,6 +18,9 @@ type Client interface {
 	ModifyPermissions(ctx context.Context, path string, opts ...PermissionsOption) (err error)
 }
 
+// Path stores Entry paths in database
+type Path string
+
 type EntryType uint
 
 type Directory struct {
