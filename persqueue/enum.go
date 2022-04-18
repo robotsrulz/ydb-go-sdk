@@ -32,7 +32,7 @@ func (c Codec) String() string {
 type Format uint8
 
 const (
-	FormatUnspecified = iota
+	FormatUnspecified Format = iota
 	FormatBase
 )
 

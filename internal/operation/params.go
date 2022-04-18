@@ -31,3 +31,12 @@ func Params(
 		CancelAfter:      timeoutParam(cancelAfter),
 	}
 }
+
+type TimeoutsConfig interface {
+	OperationTimeout() time.Duration
+	OperationCancelAfter() time.Duration
+}
+
+func Sync(ctx context.Context, timeouts TimeoutsConfig) *Ydb_Operations.OperationParams {
+	return Params(ctx, timeouts.OperationTimeout(), timeouts.OperationCancelAfter(), ModeSync)
+}

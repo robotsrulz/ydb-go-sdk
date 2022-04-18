@@ -2,12 +2,17 @@ package persqueue
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_PersQueue_V1"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/scheme"
 )
 
 type Client interface {
+	Close(context.Context) error
+
 	DescribeStream(context.Context, scheme.Path) (StreamInfo, error)
 	DropStream(context.Context, scheme.Path) error
 	CreateStream(context.Context, scheme.Path, StreamSettings, ...StreamOption) error
@@ -48,7 +53,6 @@ type StreamSettings struct {
 
 	// User and server attributes of topic. Server attributes starts from "_" and will be validated by server.
 	Attributes map[string]string // TODO: что сюда можно написать и зачем
-
 }
 
 // Message for read rules description.
@@ -79,7 +83,7 @@ type RemoteMirrorRule struct {
 	// Source cluster endpoint in format server:port.
 	Endpoint string
 	// Source topic that we want to mirror.
-	SourceStream string
+	SourceStream scheme.Path
 	// Source consumer for reading source topic.
 	Consumer Consumer
 	// Credentials for reading source topic by source consumer.
@@ -115,4 +119,98 @@ type StreamInfo struct {
 	ReadRules []ReadRule
 	// remote mirror rule for this topic.
 	RemoteMirrorRule RemoteMirrorRule // TODO: хотим ли выставлять это?
+}
+
+func (ss *StreamSettings) From(y *Ydb_PersQueue_V1.TopicSettings) {
+	var attrs map[string]string
+	if len(y.Attributes) > 0 {
+		attrs = make(map[string]string, len(y.Attributes))
+		for k, v := range y.Attributes {
+			attrs[k] = v
+		}
+	}
+
+	*ss = StreamSettings{
+		PartitionsCount:                      int(y.PartitionsCount),
+		RetentionPeriod:                      time.Duration(y.RetentionPeriodMs) * time.Millisecond,
+		MessageGroupSeqnoRetentionPeriod:     time.Duration(y.MessageGroupSeqnoRetentionPeriodMs) * time.Millisecond,
+		MaxPartitionMessageGroupsSeqnoStored: int(y.MaxPartitionMessageGroupsSeqnoStored),
+		SupportedCodecs:                      decodeCodecs(y.SupportedCodecs),
+		MaxPartitionStorageSize:              int(y.MaxPartitionStorageSize),
+		MaxPartitionWriteSpeed:               int(y.MaxPartitionWriteSpeed),
+		MaxPartitionWriteBurst:               int(y.MaxPartitionWriteBurst),
+		SupportedFormat:                      decodeFormat(y.SupportedFormat),
+		ClientWriteDisabled:                  y.ClientWriteDisabled,
+		Attributes:                           attrs,
+	}
+}
+
+func (rr *ReadRule) From(y *Ydb_PersQueue_V1.TopicSettings_ReadRule) {
+	*rr = ReadRule{
+		Consumer:                 Consumer(y.ConsumerName),
+		StartingMessageTimestamp: time.UnixMilli(y.StartingMessageTimestampMs),
+		Important:                y.Important,
+		SupportedFormat:          decodeFormat(y.SupportedFormat),
+		Codecs:                   decodeCodecs(y.SupportedCodecs),
+		Version:                  int(y.Version),
+		ServiceType:              y.ServiceType,
+	}
+}
+
+func (rm *RemoteMirrorRule) From(y *Ydb_PersQueue_V1.TopicSettings_RemoteMirrorRule) {
+	*rm = RemoteMirrorRule{
+		Endpoint:                 y.Endpoint,
+		SourceStream:             scheme.Path(y.TopicPath),
+		Consumer:                 Consumer(y.ConsumerName),
+		Credentials:              decodeCredentials(y.Credentials),
+		StartingMessageTimestamp: time.UnixMilli(y.StartingMessageTimestampMs),
+		Database:                 y.Database,
+	}
+}
+
+func decodeCodecs(y []Ydb_PersQueue_V1.Codec) []Codec {
+	codecs := make([]Codec, len(y))
+	for i := range codecs {
+		switch y[i] {
+		case Ydb_PersQueue_V1.Codec_CODEC_RAW:
+			codecs[i] = CodecRaw
+		case Ydb_PersQueue_V1.Codec_CODEC_GZIP:
+			codecs[i] = CodecGzip
+		case Ydb_PersQueue_V1.Codec_CODEC_LZOP:
+			codecs[i] = CodecLzop
+		case Ydb_PersQueue_V1.Codec_CODEC_ZSTD:
+			codecs[i] = CodecZstd
+		default:
+			codecs[i] = CodecUnspecified
+		}
+	}
+	return codecs
+}
+
+func decodeFormat(y Ydb_PersQueue_V1.TopicSettings_Format) Format {
+	switch y {
+	case Ydb_PersQueue_V1.TopicSettings_FORMAT_BASE:
+		return FormatBase
+	default:
+		return FormatUnspecified
+	}
+}
+
+func decodeCredentials(y *Ydb_PersQueue_V1.Credentials) RemoteMirrorCredentials {
+	if y == nil || y.Credentials == nil {
+		return nil
+	}
+	switch c := y.Credentials.(type) {
+	case *Ydb_PersQueue_V1.Credentials_Iam_:
+		return IAMCredentials{
+			Endpoint:          c.Iam.Endpoint,
+			ServiceAccountKey: c.Iam.ServiceAccountKey,
+		}
+	case *Ydb_PersQueue_V1.Credentials_JwtParams:
+		return JWTCredentials(c.JwtParams)
+	case *Ydb_PersQueue_V1.Credentials_OauthToken:
+		return OAuthTokenCredentials(c.OauthToken)
+	default:
+		panic(fmt.Sprintf("unknown credentials type %T", y))
+	}
 }

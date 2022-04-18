@@ -23,6 +23,8 @@ import (
 	tableConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 	"github.com/ydb-platform/ydb-go-sdk/v3/log"
+	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	persqueueConfig "github.com/ydb-platform/ydb-go-sdk/v3/persqueue/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/ratelimiter"
 	"github.com/ydb-platform/ydb-go-sdk/v3/scheme"
 	"github.com/ydb-platform/ydb-go-sdk/v3/scripting"
@@ -83,6 +85,9 @@ type connection struct {
 
 	ratelimiter        ratelimiter.Client
 	ratelimiterOptions []ratelimiterConfig.Option
+
+	persqueue        *lazy.LazyPersqueue
+	persqueueOptions []persqueueConfig.Option
 
 	pool conn.Pool
 
@@ -203,6 +208,10 @@ func (c *connection) Discovery() discovery.Client {
 
 func (c *connection) Scripting() scripting.Client {
 	return c.scripting
+}
+
+func (c *connection) Persqueue() persqueue.Client {
+	return c.persqueue.Client()
 }
 
 // Open connects to database by DSN and return driver runtime holder
@@ -353,6 +362,17 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 				ratelimiterConfig.With(c.config.Common),
 			},
 			c.ratelimiterOptions...,
+		),
+	)
+
+	c.persqueue = lazy.Persqueue(
+		c.db, // prepend config params from root config
+		append(
+			[]persqueueConfig.Option{
+				persqueueConfig.WithOperationTimeout(c.config.OperationTimeout()),
+				persqueueConfig.WithOperationCancelAfter(c.config.OperationCancelAfter()),
+			},
+			c.persqueueOptions...,
 		),
 	)
 

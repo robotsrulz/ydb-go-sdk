@@ -1,14 +1,23 @@
 package persqueue
 
 // CreateStreamOption stores additional options for stream modification requests
-type StreamOption func() // FIXME: сделать накат на internal описание топиков
+type StreamOption func(streamOptions)
 
 // WithReadRule add read rule setting to stream modification calls
-func WithReadRule(ReadRule) StreamOption {
-	return nil
+func WithReadRule(r ReadRule) StreamOption {
+	return func(o streamOptions) {
+		o.AddReadRule(r)
+	}
 }
 
 // WithRemoteMirrorRule add remote mirror settings to stream modification calls
-func WithRemoteMirrorRule(RemoteMirrorRule) StreamOption {
-	return nil
+func WithRemoteMirrorRule(r RemoteMirrorRule) StreamOption {
+	return func(o streamOptions) {
+		o.SetRemoteMirrorRule(r)
+	}
+}
+
+type streamOptions interface {
+	AddReadRule(r ReadRule)
+	SetRemoteMirrorRule(r RemoteMirrorRule)
 }
