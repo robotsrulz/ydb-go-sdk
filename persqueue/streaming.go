@@ -1,11 +1,20 @@
 package persqueue
 
 import (
+	"context"
 	"io"
 	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/scheme"
 )
+
+type ReadClient interface {
+	ReadStream(context.Context) ReadStream
+}
+
+type WriteClient interface {
+	WriteStream(context.Context) WriteStream
+}
 
 type ReadStream interface {
 	Send(ReadRequest) error
