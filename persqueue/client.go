@@ -98,9 +98,9 @@ type RemoteMirrorCredentials interface {
 	isRemoteMirrorCredentials()
 }
 
-func (OAuthTokenCredentials) isRemoteMirrorCredentials()
-func (JWTCredentials) isRemoteMirrorCredentials()
-func (IAMCredentials) isRemoteMirrorCredentials()
+func (OAuthTokenCredentials) isRemoteMirrorCredentials() {}
+func (JWTCredentials) isRemoteMirrorCredentials()        {}
+func (IAMCredentials) isRemoteMirrorCredentials()        {}
 
 type OAuthTokenCredentials string
 
@@ -146,6 +146,10 @@ func (ss *StreamSettings) From(y *Ydb_PersQueue_V1.TopicSettings) {
 }
 
 func (rr *ReadRule) From(y *Ydb_PersQueue_V1.TopicSettings_ReadRule) {
+	if y == nil {
+		*rr = ReadRule{}
+		return
+	}
 	*rr = ReadRule{
 		Consumer:                 Consumer(y.ConsumerName),
 		StartingMessageTimestamp: time.UnixMilli(y.StartingMessageTimestampMs),
@@ -158,6 +162,10 @@ func (rr *ReadRule) From(y *Ydb_PersQueue_V1.TopicSettings_ReadRule) {
 }
 
 func (rm *RemoteMirrorRule) From(y *Ydb_PersQueue_V1.TopicSettings_RemoteMirrorRule) {
+	if y == nil {
+		*rm = RemoteMirrorRule{}
+		return
+	}
 	*rm = RemoteMirrorRule{
 		Endpoint:                 y.Endpoint,
 		SourceStream:             scheme.Path(y.TopicPath),
