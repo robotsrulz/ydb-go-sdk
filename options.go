@@ -13,17 +13,19 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/credentials"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
-	coordinationConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination/config"
-	discoveryConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/discovery/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/dsn"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/logger"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
+	"github.com/ydb-platform/ydb-go-sdk/v3/log"
+	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
+
+	coordinationConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination/config"
+	discoveryConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/discovery/config"
 	ratelimiterConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter/config"
 	schemeConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme/config"
 	scriptingConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scripting/config"
 	tableConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
-	"github.com/ydb-platform/ydb-go-sdk/v3/log"
-	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
+	persqueueConfig "github.com/ydb-platform/ydb-go-sdk/v3/persqueue/config"
 )
 
 // Option contains configuration values for Connection
@@ -498,6 +500,14 @@ func WithTraceDiscovery(t trace.Discovery, opts ...trace.DiscoveryComposeOption)
 				)...,
 			),
 		)
+		return nil
+	}
+}
+
+// WithPersqueueCluster set explicit persqueue cluster
+func WithPersqueueCluster(name string) Option {
+	return func(_ context.Context, c *connection) error {
+		c.persqueueOptions = append(c.persqueueOptions, persqueueConfig.WithCluster(name))
 		return nil
 	}
 }

@@ -39,7 +39,7 @@ func (c *Client) DescribeStream(ctx context.Context, topic scheme.Path) (info pe
 	err = retry.Retry(ctx, func(ctx context.Context) (err error) {
 		info, err = c.describeStream(ctx, topic)
 		return xerrors.WithStackTrace(err)
-	}, retry.WithIdempotent())
+	}, retry.WithIdempotent(true))
 	return info, err
 }
 

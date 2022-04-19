@@ -12,6 +12,8 @@ type Config struct {
 	operationTimeout     time.Duration
 	operationCancelAfter time.Duration
 
+	cluster string
+
 	panicCallback func(e interface{})
 }
 
@@ -21,6 +23,10 @@ func (c Config) OperationTimeout() time.Duration {
 
 func (c Config) OperationCancelAfter() time.Duration {
 	return c.operationCancelAfter
+}
+
+func (c Config) Cluster() string {
+	return c.cluster
 }
 
 func (c Config) Trace() trace.Persqueue {
@@ -59,6 +65,14 @@ func WithOperationTimeout(operationTimeout time.Duration) Option {
 func WithOperationCancelAfter(operationCancelAfter time.Duration) Option {
 	return func(c *Config) {
 		c.operationCancelAfter = operationCancelAfter
+	}
+}
+
+// WithCluster set name of persqueue cluster explicitly.
+// If no cluster discovery  used then this options should be setted.
+func WithCluster(name string) Option {
+	return func(c *Config) {
+		c.cluster = name
 	}
 }
 
