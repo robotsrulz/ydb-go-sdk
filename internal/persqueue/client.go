@@ -2,6 +2,7 @@ package persqueue
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_PersQueue_V1"
 	"google.golang.org/grpc"
@@ -22,67 +23,77 @@ var _ persqueue.Client = &Client{}
 type Client struct {
 	config  config.Config
 	service Ydb_PersQueue_V1.PersQueueServiceClient
+
+	topicsPrefix string
 }
 
-func New(cc grpc.ClientConnInterface, options []config.Option) *Client {
-	return &Client{
+type Connector interface {
+	grpc.ClientConnInterface
+	Name() string
+}
+
+func New(cc Connector, options []config.Option) *Client {
+	c := Client{
 		config:  config.New(options...),
 		service: Ydb_PersQueue_V1.NewPersQueueServiceClient(cc),
 	}
+	c.topicsPrefix = fmt.Sprintf("%s/PQ/rt3.%s--", cc.Name(), c.config.Cluster())
+
+	return &c
 }
 
 func (c *Client) Close(_ context.Context) error {
 	return nil
 }
 
-func (c *Client) DescribeStream(ctx context.Context, topic scheme.Path) (info persqueue.StreamInfo, err error) {
+func (c *Client) DescribeStream(ctx context.Context, stream scheme.Path) (info persqueue.StreamInfo, err error) {
 	err = retry.Retry(ctx, func(ctx context.Context) (err error) {
-		info, err = c.describeStream(ctx, topic)
+		info, err = c.describeStream(ctx, stream)
 		return xerrors.WithStackTrace(err)
 	}, retry.WithIdempotent(true))
 	return info, err
 }
 
-func (c *Client) DropStream(ctx context.Context, topic scheme.Path) error {
+func (c *Client) DropStream(ctx context.Context, stream scheme.Path) error {
 	return retry.Retry(ctx, func(ctx context.Context) error {
-		return c.dropStream(ctx, topic)
+		return c.dropStream(ctx, stream)
 	})
 }
 
-func (c *Client) CreateStream(ctx context.Context, topic scheme.Path,
+func (c *Client) CreateStream(ctx context.Context, stream scheme.Path,
 	settings persqueue.StreamSettings, opts ...persqueue.StreamOption,
 ) error {
 	return retry.Retry(ctx, func(ctx context.Context) error {
-		return c.createStream(ctx, topic, settings, opts...)
+		return c.createStream(ctx, stream, settings, opts...)
 	})
 }
 
-func (c *Client) AlterStream(ctx context.Context, topic scheme.Path,
+func (c *Client) AlterStream(ctx context.Context, stream scheme.Path,
 	settings persqueue.StreamSettings, opts ...persqueue.StreamOption,
 ) error {
 	return retry.Retry(ctx, func(ctx context.Context) error {
-		return c.alterStream(ctx, topic, settings, opts...)
+		return c.alterStream(ctx, stream, settings, opts...)
 	})
 }
 
-func (c *Client) AddReadRule(ctx context.Context, topic scheme.Path, rule persqueue.ReadRule) error {
+func (c *Client) AddReadRule(ctx context.Context, stream scheme.Path, rule persqueue.ReadRule) error {
 	return retry.Retry(ctx, func(ctx context.Context) error {
-		return c.addReadRule(ctx, topic, rule)
+		return c.addReadRule(ctx, stream, rule)
 	})
 }
 
-func (c *Client) RemoveReadRule(ctx context.Context, topic scheme.Path, consumer persqueue.Consumer) error {
+func (c *Client) RemoveReadRule(ctx context.Context, stream scheme.Path, consumer persqueue.Consumer) error {
 	return retry.Retry(ctx, func(ctx context.Context) error {
-		return c.removeReadRule(ctx, topic, consumer)
+		return c.removeReadRule(ctx, stream, consumer)
 	})
 }
 
-func (c *Client) describeStream(ctx context.Context, topic scheme.Path) (persqueue.StreamInfo, error) {
+func (c *Client) describeStream(ctx context.Context, stream scheme.Path) (persqueue.StreamInfo, error) {
 	var result persqueue.StreamInfo
 
 	response, err := c.service.DescribeTopic(ctx,
 		&pqproto.DescribeTopicRequest{
-			Path:            string(topic),
+			Path:            c.streamToTopic(stream),
 			OperationParams: operation.Sync(ctx, c.config),
 		},
 	)
@@ -107,22 +118,22 @@ func (c *Client) describeStream(ctx context.Context, topic scheme.Path) (persque
 	return result, nil
 }
 
-func (c *Client) dropStream(ctx context.Context, topic scheme.Path) error {
+func (c *Client) dropStream(ctx context.Context, stream scheme.Path) error {
 	_, err := c.service.DropTopic(ctx,
 		&pqproto.DropTopicRequest{
-			Path:            string(topic),
+			Path:            c.streamToTopic(stream),
 			OperationParams: operation.Sync(ctx, c.config),
 		},
 	)
 	return xerrors.WithStackTrace(err)
 }
 
-func (c *Client) createStream(ctx context.Context, topic scheme.Path,
+func (c *Client) createStream(ctx context.Context, stream scheme.Path,
 	settings persqueue.StreamSettings, opts ...persqueue.StreamOption,
 ) error {
 	_, err := c.service.CreateTopic(ctx,
 		&pqproto.CreateTopicRequest{
-			Path:            string(topic),
+			Path:            c.streamToTopic(stream),
 			OperationParams: operation.Sync(ctx, c.config),
 			Settings:        encodeTopicSettings(settings, opts...),
 		},
@@ -130,12 +141,12 @@ func (c *Client) createStream(ctx context.Context, topic scheme.Path,
 	return xerrors.WithStackTrace(err)
 }
 
-func (c *Client) alterStream(ctx context.Context, topic scheme.Path,
+func (c *Client) alterStream(ctx context.Context, stream scheme.Path,
 	settings persqueue.StreamSettings, opts ...persqueue.StreamOption,
 ) error {
 	_, err := c.service.AlterTopic(ctx,
 		&pqproto.AlterTopicRequest{
-			Path:            string(topic),
+			Path:            c.streamToTopic(stream),
 			OperationParams: operation.Sync(ctx, c.config),
 			Settings:        encodeTopicSettings(settings, opts...),
 		},
@@ -143,10 +154,10 @@ func (c *Client) alterStream(ctx context.Context, topic scheme.Path,
 	return xerrors.WithStackTrace(err)
 }
 
-func (c *Client) addReadRule(ctx context.Context, topic scheme.Path, rule persqueue.ReadRule) error {
+func (c *Client) addReadRule(ctx context.Context, stream scheme.Path, rule persqueue.ReadRule) error {
 	_, err := c.service.AddReadRule(ctx,
 		&pqproto.AddReadRuleRequest{
-			Path:            string(topic),
+			Path:            c.streamToTopic(stream),
 			OperationParams: operation.Sync(ctx, c.config),
 			ReadRule:        encodeReadRule(rule),
 		},
@@ -154,13 +165,17 @@ func (c *Client) addReadRule(ctx context.Context, topic scheme.Path, rule persqu
 	return xerrors.WithStackTrace(err)
 }
 
-func (c *Client) removeReadRule(ctx context.Context, topic scheme.Path, consumer persqueue.Consumer) error {
+func (c *Client) removeReadRule(ctx context.Context, stream scheme.Path, consumer persqueue.Consumer) error {
 	_, err := c.service.RemoveReadRule(ctx,
 		&pqproto.RemoveReadRuleRequest{
-			Path:            string(topic),
+			Path:            c.streamToTopic(stream),
 			OperationParams: operation.Sync(ctx, c.config),
 			ConsumerName:    string(consumer),
 		},
 	)
 	return xerrors.WithStackTrace(err)
+}
+
+func (c *Client) streamToTopic(p scheme.Path) string {
+	return fmt.Sprintf("%s%s", c.topicsPrefix, p)
 }
