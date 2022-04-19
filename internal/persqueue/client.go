@@ -3,6 +3,7 @@ package persqueue
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_PersQueue_V1"
 	"google.golang.org/grpc"
@@ -177,5 +178,11 @@ func (c *Client) removeReadRule(ctx context.Context, stream scheme.Path, consume
 }
 
 func (c *Client) streamToTopic(p scheme.Path) string {
-	return fmt.Sprintf("%s%s", c.topicsPrefix, p)
+	topic := strings.TrimPrefix(string(p), "/")
+
+	if parts := strings.Split(topic, "/"); len(parts) > 1 {
+		dir := strings.Join(parts[:len(parts)-1], "@")
+		topic = strings.Join([]string{dir, parts[len(parts)-1]}, "--")
+	}
+	return fmt.Sprintf("%s%s", c.topicsPrefix, topic)
 }
