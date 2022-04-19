@@ -58,8 +58,10 @@ type Connection interface {
 	Ratelimiter() ratelimiter.Client
 	Discovery() discovery.Client
 	Scripting() scripting.Client
+	Persqueue() persqueue.Client
 
-	// Make copy with additional options
+	// With returns Connection specified with custom options
+	// Options provide options replacement for all clients taked from new Connection
 	With(ctx context.Context, opts ...Option) (Connection, error)
 }
 
