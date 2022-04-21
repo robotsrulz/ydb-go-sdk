@@ -45,7 +45,7 @@ func (d *PQDiscovery) DiscoverForWrite(
 	err = retry.Retry(ctx, func(ctx context.Context) (err error) {
 		res, err = d.discover(ctx, &param, nil)
 		return xerrors.WithStackTrace(err)
-	}, retry.WithIdempotent())
+	}, retry.WithIdempotent(true))
 	return res, err
 }
 
@@ -64,7 +64,7 @@ func (d *PQDiscovery) DiscoverForRead(
 	err = retry.Retry(ctx, func(ctx context.Context) (err error) {
 		res, err = d.discover(ctx, nil, &param)
 		return xerrors.WithStackTrace(err)
-	}, retry.WithIdempotent())
+	}, retry.WithIdempotent(true))
 	return res, err
 }
 
