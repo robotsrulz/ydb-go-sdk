@@ -21,3 +21,11 @@ type streamOptions interface {
 	AddReadRule(r ReadRule)
 	SetRemoteMirrorRule(r RemoteMirrorRule)
 }
+
+type StreamingWriteOption func()
+
+type steramingWriteOption interface {
+	SetCodec(Codec)
+	SetFormat(Format)
+	// Block encoding settings
+}

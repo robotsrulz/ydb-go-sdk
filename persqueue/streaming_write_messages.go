@@ -79,8 +79,7 @@ type WriteMessage struct {
 	SeqNo     int
 	CreatedAt time.Time
 	SentAt    time.Time
-	Codec     Codec
-	Data      EncodeReader
+	Data EncodeReader
 }
 
 type WriteResult struct {

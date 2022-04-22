@@ -148,12 +148,6 @@ type ReadRemoveStreamResponse struct {
 
 // Common types
 
-type Assign struct {
-	Stream   string
-	Cluster  string
-	AssignID uint
-}
-
 type OffsetRange struct {
 	StartOffset uint
 	EndOffset   uint

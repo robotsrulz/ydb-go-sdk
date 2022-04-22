@@ -50,9 +50,6 @@ type StreamSettings struct {
 	SupportedFormat Format
 	// Disallows client writes. Used for mirrored topics in federation.
 	ClientWriteDisabled bool
-
-	// User and server attributes of topic. Server attributes starts from "_" and will be validated by server.
-	Attributes map[string]string // TODO: что сюда можно написать и зачем
 }
 
 // Message for read rules description.
@@ -74,8 +71,8 @@ type ReadRule struct {
 	// Read rule version. Any non-negative integer.
 	Version int
 
-	// Client service type.
-	ServiceType string // TODO: что это и зачем
+	// Client service type. internal
+	ServiceType string //
 }
 
 // Message for remote mirror rule description.
@@ -104,7 +101,7 @@ func (IAMCredentials) isRemoteMirrorCredentials()        {}
 
 type OAuthTokenCredentials string
 
-type JWTCredentials string // TODO: что сюда писать?
+type JWTCredentials string // TODO: json + JWT token
 
 type IAMCredentials struct {
 	Endpoint          string
@@ -118,18 +115,10 @@ type StreamInfo struct {
 	// List of consumer read rules for this topic.
 	ReadRules []ReadRule
 	// remote mirror rule for this topic.
-	RemoteMirrorRule RemoteMirrorRule // TODO: хотим ли выставлять это?
+	RemoteMirrorRule RemoteMirrorRule
 }
 
 func (ss *StreamSettings) From(y *Ydb_PersQueue_V1.TopicSettings) {
-	var attrs map[string]string
-	if len(y.Attributes) > 0 {
-		attrs = make(map[string]string, len(y.Attributes))
-		for k, v := range y.Attributes {
-			attrs[k] = v
-		}
-	}
-
 	*ss = StreamSettings{
 		PartitionsCount:                      int(y.PartitionsCount),
 		RetentionPeriod:                      time.Duration(y.RetentionPeriodMs) * time.Millisecond,
@@ -141,7 +130,6 @@ func (ss *StreamSettings) From(y *Ydb_PersQueue_V1.TopicSettings) {
 		MaxPartitionWriteBurst:               int(y.MaxPartitionWriteBurst),
 		SupportedFormat:                      decodeFormat(y.SupportedFormat),
 		ClientWriteDisabled:                  y.ClientWriteDisabled,
-		Attributes:                           attrs,
 	}
 }
 

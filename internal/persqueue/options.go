@@ -39,7 +39,6 @@ func encodeTopicSettings(settings persqueue.StreamSettings, opts ...persqueue.St
 		MaxPartitionWriteBurst:               int64(settings.MaxPartitionWriteBurst),
 		ClientWriteDisabled:                  settings.ClientWriteDisabled,
 		ReadRules:                            optValues.readRules,
-		Attributes:                           settings.Attributes,
 		RemoteMirrorRule:                     optValues.remoteMirror,
 	}
 }

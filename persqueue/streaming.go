@@ -32,8 +32,6 @@ type WriteStream interface {
 type EncodeReader interface {
 	io.Reader
 	Len() int
-	Codec() Codec
-	OriginalLen() int
 }
 
 // Technical helper types
