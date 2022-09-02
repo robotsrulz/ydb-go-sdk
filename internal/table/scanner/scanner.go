@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"reflect"
-	"sync"
 	"time"
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
@@ -16,23 +16,27 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/timeutil"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/value"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xsync"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/options"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/result/indexed"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/result/named"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
 )
 
+var errTruncated = xerrors.Wrap(errors.New("truncated result"))
+
 type scanner struct {
-	set       *Ydb.ResultSet
-	row       *Ydb.Value
-	converter *rawConverter
-	stack     scanStack
-	nextRow   int
-	nextItem  int
+	set             *Ydb.ResultSet
+	row             *Ydb.Value
+	converter       *rawConverter
+	stack           scanStack
+	nextRow         int
+	nextItem        int
+	ignoreTruncated bool
 
 	columnIndexes []int
 
-	errMtx sync.RWMutex
+	errMtx xsync.RWMutex
 	err    error
 }
 
@@ -206,11 +210,25 @@ func (s *scanner) Truncated() bool {
 	return s.set.Truncated
 }
 
+// Truncated returns true if current result set has been truncated by server
+func (s *scanner) truncated() bool {
+	if s.set == nil {
+		return false
+	}
+	return s.set.Truncated
+}
+
 // Err returns error caused Scanner to be broken.
 func (s *scanner) Err() error {
 	s.errMtx.RLock()
 	defer s.errMtx.RUnlock()
-	return s.err
+	if s.err != nil {
+		return s.err
+	}
+	if !s.ignoreTruncated && s.truncated() {
+		return xerrors.WithStackTrace(errTruncated)
+	}
+	return nil
 }
 
 // Must not be exported.
@@ -307,22 +325,22 @@ func (s *scanner) setColumnIndexes(columns []string) {
 // Any returns any primitive or optional value.
 // Currently, it may return one of these types:
 //
-//   bool
-//   int8
-//   uint8
-//   int16
-//   uint16
-//   int32
-//   uint32
-//   int64
-//   uint64
-//   float32
-//   float64
-//   []byte
-//   string
-//   [16]byte
+//	bool
+//	int8
+//	uint8
+//	int16
+//	uint16
+//	int32
+//	uint32
+//	int64
+//	uint64
+//	float32
+//	float64
+//	[]byte
+//	string
+//	[16]byte
 //
-// nolint:gocyclo
+//nolint:gocyclo
 func (s *scanner) any() interface{} {
 	x := s.stack.current()
 	if s.Err() != nil || x.isEmpty() {
@@ -378,7 +396,7 @@ func (s *scanner) any() interface{} {
 	case value.TypeInt64:
 		return s.int64()
 	case value.TypeInterval:
-		return timeutil.UnmarshalInterval(s.int64())
+		return timeutil.MicrosecondsToDuration(s.int64())
 	case value.TypeTzDate:
 		src, err := timeutil.UnmarshalTzDate(s.text())
 		if err != nil {
@@ -426,7 +444,7 @@ func (s *scanner) isNull() bool {
 	return yes
 }
 
-// unwrap current item under scan interpreting it as Optional<T> types.
+// unwrap current item under scan interpreting it as Optional<Type> types.
 // ignores if type is not optional
 func (s *scanner) unwrap() {
 	if s.Err() != nil {
@@ -718,7 +736,7 @@ func (s *scanner) trySetByteArray(v interface{}, optional bool, def bool) bool {
 	return true
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func (s *scanner) scanRequired(value interface{}) {
 	switch v := value.(type) {
 	case *bool:
@@ -750,7 +768,7 @@ func (s *scanner) scanRequired(value interface{}) {
 	case *time.Time:
 		s.setTime(v)
 	case *time.Duration:
-		*v = timeutil.UnmarshalInterval(s.int64())
+		*v = timeutil.MicrosecondsToDuration(s.int64())
 	case *string:
 		s.setString(v)
 	case *[]byte:
@@ -794,7 +812,7 @@ func (s *scanner) scanRequired(value interface{}) {
 	}
 }
 
-// nolint:gocyclo
+//nolint:gocyclo
 func (s *scanner) scanOptional(value interface{}, defaultValueForOptional bool) {
 	if defaultValueForOptional {
 		if s.isNull() {
@@ -910,7 +928,7 @@ func (s *scanner) scanOptional(value interface{}, defaultValueForOptional bool) 
 		if s.isNull() {
 			*v = nil
 		} else {
-			src := timeutil.UnmarshalInterval(s.int64())
+			src := timeutil.MicrosecondsToDuration(s.int64())
 			*v = &src
 		}
 	case **string:
@@ -969,9 +987,17 @@ func (s *scanner) scanOptional(value interface{}, defaultValueForOptional bool) 
 		var err error
 		switch s.getType() {
 		case types.TypeJSON:
-			err = v.UnmarshalJSON(s.converter.JSON())
+			if s.isNull() {
+				err = v.UnmarshalJSON(nil)
+			} else {
+				err = v.UnmarshalJSON(s.converter.JSON())
+			}
 		case types.TypeJSONDocument:
-			err = v.UnmarshalJSON(s.converter.JSONDocument())
+			if s.isNull() {
+				err = v.UnmarshalJSON(nil)
+			} else {
+				err = v.UnmarshalJSON(s.converter.JSONDocument())
+			}
 		default:
 			_ = s.errorf(0, "ydb optional type %T not unsupported for applying to json.Unmarshaler", s.getType())
 		}
@@ -1056,9 +1082,9 @@ func (s *scanner) setDefaultValue(dst interface{}) {
 }
 
 func (r *baseResult) SetErr(err error) {
-	r.errMtx.Lock()
-	r.err = err
-	r.errMtx.Unlock()
+	r.errMtx.WithLock(func() {
+		r.err = err
+	})
 }
 
 func (s *scanner) errorf(depth int, f string, args ...interface{}) error {

@@ -38,29 +38,20 @@ type (
 		) func(
 			DriverConnNewStreamDoneInfo,
 		)
-		OnConnTake               func(DriverConnTakeStartInfo) func(DriverConnTakeDoneInfo)
-		OnConnUsagesChange       func(DriverConnUsagesChangeInfo)
-		OnConnStreamUsagesChange func(DriverConnStreamUsagesChangeInfo)
-		OnConnPark               func(DriverConnParkStartInfo) func(DriverConnParkDoneInfo)
-		OnConnClose              func(DriverConnCloseStartInfo) func(DriverConnCloseDoneInfo)
-		OnConnRelease            func(DriverConnReleaseStartInfo) func(DriverConnReleaseDoneInfo)
-
-		// Cluster events
-		OnClusterInit  func(DriverClusterInitStartInfo) func(DriverClusterInitDoneInfo)
-		OnClusterClose func(DriverClusterCloseStartInfo) func(DriverClusterCloseDoneInfo)
-		OnClusterGet   func(DriverClusterGetStartInfo) func(DriverClusterGetDoneInfo)
-
-		// Deprecated: has no effect now
-		OnClusterInsert func(DriverClusterInsertStartInfo) func(DriverClusterInsertDoneInfo)
-
-		// Deprecated: has no effect now
-		OnClusterRemove func(DriverClusterRemoveStartInfo) func(DriverClusterRemoveDoneInfo)
-
-		OnPessimizeNode   func(DriverPessimizeNodeStartInfo) func(DriverPessimizeNodeDoneInfo)
-		OnUnpessimizeNode func(DriverUnpessimizeNodeStartInfo) func(DriverUnpessimizeNodeDoneInfo)
+		OnConnTake  func(DriverConnTakeStartInfo) func(DriverConnTakeDoneInfo)
+		OnConnPark  func(DriverConnParkStartInfo) func(DriverConnParkDoneInfo)
+		OnConnBan   func(DriverConnBanStartInfo) func(DriverConnBanDoneInfo)
+		OnConnAllow func(DriverConnAllowStartInfo) func(DriverConnAllowDoneInfo)
+		OnConnClose func(DriverConnCloseStartInfo) func(DriverConnCloseDoneInfo)
 
 		// Repeater events
-		OnRepeaterWakeUp func(DriverRepeaterTickStartInfo) func(DriverRepeaterTickDoneInfo)
+		OnRepeaterWakeUp func(DriverRepeaterWakeUpStartInfo) func(DriverRepeaterWakeUpDoneInfo)
+
+		// Balancer events
+		OnBalancerInit           func(DriverBalancerInitStartInfo) func(DriverBalancerInitDoneInfo)
+		OnBalancerClose          func(DriverBalancerCloseStartInfo) func(DriverBalancerCloseDoneInfo)
+		OnBalancerChooseEndpoint func(DriverBalancerChooseEndpointStartInfo) func(DriverBalancerChooseEndpointDoneInfo)
+		OnBalancerUpdate         func(DriverBalancerUpdateStartInfo) func(DriverBalancerUpdateDoneInfo)
 
 		// Credentials events
 		OnGetCredentials func(DriverGetCredentialsStartInfo) func(DriverGetCredentialsDoneInfo)
@@ -117,30 +108,6 @@ type EndpointInfo interface {
 }
 
 type (
-	DriverClusterInsertStartInfo struct {
-		// Context make available context in trace callback function.
-		// Pointer to context provide replacement of context in trace callback function.
-		// Warning: concurrent access to pointer on client side must be excluded.
-		// Safe replacement of context are provided only inside callback function
-		Context  *context.Context
-		Endpoint EndpointInfo
-	}
-	DriverClusterInsertDoneInfo struct {
-		Inserted bool
-		State    ConnState
-	}
-	DriverClusterRemoveStartInfo struct {
-		// Context make available context in trace callback function.
-		// Pointer to context provide replacement of context in trace callback function.
-		// Warning: concurrent access to pointer on client side must be excluded.
-		// Safe replacement of context are provided only inside callback function
-		Context  *context.Context
-		Endpoint EndpointInfo
-	}
-	DriverClusterRemoveDoneInfo struct {
-		Removed bool
-		State   ConnState
-	}
 	DriverConnStateChangeStartInfo struct {
 		Endpoint EndpointInfo
 		State    ConnState
@@ -154,6 +121,19 @@ type (
 	}
 	DriverResolveDoneInfo struct {
 		Error error
+	}
+	DriverBalancerUpdateStartInfo struct {
+		// Context make available context in trace callback function.
+		// Pointer to context provide replacement of context in trace callback function.
+		// Warning: concurrent access to pointer on client side must be excluded.
+		// Safe replacement of context are provided only inside callback function
+		Context     *context.Context
+		NeedLocalDC bool
+	}
+	DriverBalancerUpdateDoneInfo struct {
+		Endpoints []EndpointInfo
+		LocalDC   string
+		Error     error
 	}
 	DriverNetReadStartInfo struct {
 		Address string
@@ -221,24 +201,30 @@ type (
 	DriverConnCloseDoneInfo struct {
 		Error error
 	}
-	DriverConnReleaseStartInfo struct {
+	DriverConnBanStartInfo struct {
 		// Context make available context in trace callback function.
 		// Pointer to context provide replacement of context in trace callback function.
 		// Warning: concurrent access to pointer on client side must be excluded.
 		// Safe replacement of context are provided only inside callback function
 		Context  *context.Context
 		Endpoint EndpointInfo
+		State    ConnState
+		Cause    error
 	}
-	DriverConnReleaseDoneInfo struct {
-		Error error
+	DriverConnBanDoneInfo struct {
+		State ConnState
 	}
-	DriverConnUsagesChangeInfo struct {
+	DriverConnAllowStartInfo struct {
+		// Context make available context in trace callback function.
+		// Pointer to context provide replacement of context in trace callback function.
+		// Warning: concurrent access to pointer on client side must be excluded.
+		// Safe replacement of context are provided only inside callback function
+		Context  *context.Context
 		Endpoint EndpointInfo
-		Usages   int
+		State    ConnState
 	}
-	DriverConnStreamUsagesChangeInfo struct {
-		Endpoint EndpointInfo
-		Usages   int
+	DriverConnAllowDoneInfo struct {
+		State ConnState
 	}
 	DriverConnInvokeStartInfo struct {
 		// Context make available context in trace callback function.
@@ -250,10 +236,11 @@ type (
 		Method   Method
 	}
 	DriverConnInvokeDoneInfo struct {
-		Error  error
-		Issues []Issue
-		OpID   string
-		State  ConnState
+		Error    error
+		Issues   []Issue
+		OpID     string
+		State    ConnState
+		Metadata map[string][]string
 	}
 	DriverConnNewStreamStartInfo struct {
 		// Context make available context in trace callback function.
@@ -268,67 +255,42 @@ type (
 		Error error
 	}
 	DriverConnNewStreamDoneInfo struct {
-		State ConnState
-		Error error
+		Error    error
+		State    ConnState
+		Metadata map[string][]string
 	}
-	DriverClusterInitStartInfo struct {
+	DriverBalancerInitStartInfo struct {
 		// Context make available context in trace callback function.
 		// Pointer to context provide replacement of context in trace callback function.
 		// Warning: concurrent access to pointer on client side must be excluded.
 		// Safe replacement of context are provided only inside callback function
 		Context *context.Context
 	}
-	DriverClusterInitDoneInfo struct {
+	DriverBalancerInitDoneInfo struct {
 		Error error
 	}
-	DriverClusterCloseStartInfo struct {
+	DriverBalancerCloseStartInfo struct {
 		// Context make available context in trace callback function.
 		// Pointer to context provide replacement of context in trace callback function.
 		// Warning: concurrent access to pointer on client side must be excluded.
 		// Safe replacement of context are provided only inside callback function
 		Context *context.Context
 	}
-	DriverClusterCloseDoneInfo struct {
+	DriverBalancerCloseDoneInfo struct {
 		Error error
 	}
-	DriverClusterGetStartInfo struct {
+	DriverBalancerChooseEndpointStartInfo struct {
 		// Context make available context in trace callback function.
 		// Pointer to context provide replacement of context in trace callback function.
 		// Warning: concurrent access to pointer on client side must be excluded.
 		// Safe replacement of context are provided only inside callback function
 		Context *context.Context
 	}
-	DriverClusterGetDoneInfo struct {
+	DriverBalancerChooseEndpointDoneInfo struct {
 		Endpoint EndpointInfo
 		Error    error
 	}
-	DriverPessimizeNodeStartInfo struct {
-		// Context make available context in trace callback function.
-		// Pointer to context provide replacement of context in trace callback function.
-		// Warning: concurrent access to pointer on client side must be excluded.
-		// Safe replacement of context are provided only inside callback function
-		Context  *context.Context
-		Endpoint EndpointInfo
-		State    ConnState
-		Cause    error
-	}
-	DriverPessimizeNodeDoneInfo struct {
-		State ConnState
-	}
-	DriverUnpessimizeNodeStartInfo struct {
-		// Context make available context in trace callback function.
-		// Pointer to context provide replacement of context in trace callback function.
-		// Warning: concurrent access to pointer on client side must be excluded.
-		// Safe replacement of context are provided only inside callback function
-		Context  *context.Context
-		Endpoint EndpointInfo
-		State    ConnState
-	}
-	DriverUnpessimizeNodeDoneInfo struct {
-		State ConnState
-	}
-
-	DriverRepeaterTickStartInfo struct {
+	DriverRepeaterWakeUpStartInfo struct {
 		// Context make available context in trace callback function.
 		// Pointer to context provide replacement of context in trace callback function.
 		// Warning: concurrent access to pointer on client side must be excluded.
@@ -337,7 +299,7 @@ type (
 		Name    string
 		Event   string
 	}
-	DriverRepeaterTickDoneInfo struct {
+	DriverRepeaterWakeUpDoneInfo struct {
 		Error error
 	}
 	DriverGetCredentialsStartInfo struct {

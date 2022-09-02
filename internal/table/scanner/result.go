@@ -2,26 +2,28 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"io"
-	"sync"
-	"time"
+	"sync/atomic"
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_TableStats"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xsync"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/result"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/stats"
 )
 
+var errAlreadyClosed = xerrors.Wrap(errors.New("result closed early"))
+
 type baseResult struct {
 	scanner
 
-	statsMtx sync.RWMutex
+	statsMtx xsync.RWMutex
 	stats    *Ydb_TableStats.QueryStats
 
-	closedMtx sync.RWMutex
-	closed    bool
+	closed uint32
 }
 
 type streamResult struct {
@@ -40,13 +42,10 @@ type unaryResult struct {
 
 // Close closes the result, preventing further iteration.
 func (r *unaryResult) Close() error {
-	r.closedMtx.Lock()
-	defer r.closedMtx.Unlock()
-	if r.closed {
+	if atomic.CompareAndSwapUint32(&r.closed, 0, 1) {
 		return nil
 	}
-	r.closed = true
-	return nil
+	return xerrors.WithStackTrace(errAlreadyClosed)
 }
 
 func (r *unaryResult) ResultSetCount() int {
@@ -54,9 +53,7 @@ func (r *unaryResult) ResultSetCount() int {
 }
 
 func (r *baseResult) isClosed() bool {
-	r.closedMtx.RLock()
-	defer r.closedMtx.RUnlock()
-	return r.closed
+	return atomic.LoadUint32(&r.closed) != 0
 }
 
 type resultWithError interface {
@@ -73,23 +70,38 @@ type StreamResult interface {
 	resultWithError
 }
 
+type option func(r *baseResult)
+
+func WithIgnoreTruncated(ignoreTruncated bool) option {
+	return func(r *baseResult) {
+		r.scanner.ignoreTruncated = ignoreTruncated
+	}
+}
+
 func NewStream(
 	recv func(ctx context.Context) (*Ydb.ResultSet, *Ydb_TableStats.QueryStats, error),
 	onClose func(error) error,
+	opts ...option,
 ) StreamResult {
 	r := &streamResult{
 		recv:  recv,
 		close: onClose,
 	}
+	for _, o := range opts {
+		o(&r.baseResult)
+	}
 	return r
 }
 
-func NewUnary(sets []*Ydb.ResultSet, stats *Ydb_TableStats.QueryStats) UnaryResult {
+func NewUnary(sets []*Ydb.ResultSet, stats *Ydb_TableStats.QueryStats, opts ...option) UnaryResult {
 	r := &unaryResult{
 		baseResult: baseResult{
 			stats: stats,
 		},
 		sets: sets,
+	}
+	for _, o := range opts {
+		o(&r.baseResult)
 	}
 	return r
 }
@@ -102,6 +114,9 @@ func (r *baseResult) Reset(set *Ydb.ResultSet, columnNames ...string) {
 }
 
 func (r *unaryResult) NextResultSetErr(ctx context.Context, columns ...string) (err error) {
+	if r.isClosed() {
+		return xerrors.WithStackTrace(errAlreadyClosed)
+	}
 	if !r.HasNextResultSet() {
 		return io.EOF
 	}
@@ -116,10 +131,10 @@ func (r *unaryResult) NextResultSet(ctx context.Context, columns ...string) bool
 
 func (r *streamResult) NextResultSetErr(ctx context.Context, columns ...string) (err error) {
 	if r.isClosed() {
-		if err = r.Err(); err != nil {
-			return xerrors.WithStackTrace(err)
-		}
-		return io.EOF
+		return xerrors.WithStackTrace(errAlreadyClosed)
+	}
+	if err = r.Err(); err != nil {
+		return xerrors.WithStackTrace(err)
 	}
 	s, stats, err := r.recv(ctx)
 	if err != nil {
@@ -131,9 +146,9 @@ func (r *streamResult) NextResultSetErr(ctx context.Context, columns ...string) 
 	}
 	r.Reset(s, columns...)
 	if stats != nil {
-		r.statsMtx.Lock()
-		r.stats = stats
-		r.statsMtx.Unlock()
+		r.statsMtx.WithLock(func() {
+			r.stats = stats
+		})
 	}
 	return ctx.Err()
 }
@@ -150,23 +165,23 @@ func (r *baseResult) CurrentResultSet() result.Set {
 // Stats returns query execution queryStats.
 func (r *baseResult) Stats() stats.QueryStats {
 	var s queryStats
-	r.statsMtx.RLock()
-	s.stats = r.stats
-	r.statsMtx.RUnlock()
-	s.processCPUTime = time.Microsecond * time.Duration(s.stats.GetProcessCpuTimeUs())
-	s.pos = 0
+	r.statsMtx.WithRLock(func() {
+		s.stats = r.stats
+	})
+
+	if s.stats == nil {
+		return nil
+	}
+
 	return &s
 }
 
 // Close closes the result, preventing further iteration.
 func (r *streamResult) Close() (err error) {
-	r.closedMtx.Lock()
-	defer r.closedMtx.Unlock()
-	if r.closed {
-		return nil
+	if atomic.CompareAndSwapUint32(&r.closed, 0, 1) {
+		return r.close(r.Err())
 	}
-	r.closed = true
-	return r.close(r.Err())
+	return xerrors.WithStackTrace(errAlreadyClosed)
 }
 
 func (r *baseResult) inactive() bool {

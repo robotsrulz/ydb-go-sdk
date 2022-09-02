@@ -2,7 +2,6 @@ package conn
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -11,48 +10,20 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/closer"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/endpoint"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xsync"
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
-type Pool interface {
-	Getter
-	Taker
-	Releaser
-	Pessimizer
-}
-
-type Getter interface {
-	Get(endpoint endpoint.Endpoint) Conn
-}
-
-type Taker interface {
-	Take(ctx context.Context) error
-}
-
-type Releaser interface {
-	Release(ctx context.Context) error
-}
-
-type Pessimizer interface {
-	Pessimize(ctx context.Context, cc Conn, cause error)
-	Unpessimize(ctx context.Context, cc Conn)
-}
-
-type PoolConfig interface {
-	ConnectionTTL() time.Duration
-	GrpcDialOptions() []grpc.DialOption
-}
-
-type pool struct {
+type Pool struct {
 	usages int64
 	config Config
-	mtx    sync.RWMutex
+	mtx    xsync.RWMutex
 	opts   []grpc.DialOption
 	conns  map[string]*conn
 	done   chan struct{}
 }
 
-func (p *pool) Get(endpoint endpoint.Endpoint) Conn {
+func (p *Pool) Get(endpoint endpoint.Endpoint) Conn {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -66,20 +37,38 @@ func (p *pool) Get(endpoint endpoint.Endpoint) Conn {
 		return cc
 	}
 
-	cc = newConn(endpoint, p.config, withOnClose(p.remove))
+	cc = newConn(
+		endpoint,
+		p.config,
+		withOnClose(p.remove),
+		withOnTransportError(p.Ban),
+	)
 
 	p.conns[address] = cc
 
 	return cc
 }
 
-func (p *pool) remove(c *conn) {
+func (p *Pool) remove(c *conn) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	delete(p.conns, c.Endpoint().Address())
 }
 
-func (p *pool) Pessimize(ctx context.Context, cc Conn, cause error) {
+func (p *Pool) isClosed() bool {
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Pool) Ban(ctx context.Context, cc Conn, cause error) {
+	if p.isClosed() {
+		return
+	}
+
 	e := cc.Endpoint().Copy()
 
 	p.mtx.RLock()
@@ -90,7 +79,7 @@ func (p *pool) Pessimize(ctx context.Context, cc Conn, cause error) {
 		return
 	}
 
-	trace.DriverOnPessimizeNode(
+	trace.DriverOnConnBan(
 		p.config.Trace(),
 		&ctx,
 		e,
@@ -99,7 +88,11 @@ func (p *pool) Pessimize(ctx context.Context, cc Conn, cause error) {
 	)(cc.SetState(Banned))
 }
 
-func (p *pool) Unpessimize(ctx context.Context, cc Conn) {
+func (p *Pool) Allow(ctx context.Context, cc Conn) {
+	if p.isClosed() {
+		return
+	}
+
 	e := cc.Endpoint().Copy()
 
 	p.mtx.RLock()
@@ -110,31 +103,32 @@ func (p *pool) Unpessimize(ctx context.Context, cc Conn) {
 		return
 	}
 
-	trace.DriverOnUnpessimizeNode(p.config.Trace(),
+	trace.DriverOnConnAllow(p.config.Trace(),
 		&ctx,
 		e,
 		cc.GetState(),
-	)(cc.SetState(Online))
+	)(cc.Unban())
 }
 
-func (p *pool) Take(context.Context) error {
+func (p *Pool) Take(context.Context) error {
 	atomic.AddInt64(&p.usages, 1)
 	return nil
 }
 
-func (p *pool) Release(ctx context.Context) error {
+func (p *Pool) Release(ctx context.Context) error {
 	if atomic.AddInt64(&p.usages, -1) > 0 {
 		return nil
 	}
 
 	close(p.done)
 
-	p.mtx.RLock()
-	conns := make([]closer.Closer, 0, len(p.conns))
-	for _, c := range p.conns {
-		conns = append(conns, c)
-	}
-	p.mtx.RUnlock()
+	var conns []closer.Closer
+	p.mtx.WithRLock(func() {
+		conns = make([]closer.Closer, 0, len(p.conns))
+		for _, c := range p.conns {
+			conns = append(conns, c)
+		}
+	})
 
 	var issues []error
 	for _, c := range conns {
@@ -150,7 +144,7 @@ func (p *pool) Release(ctx context.Context) error {
 	return nil
 }
 
-func (p *pool) connParker(ctx context.Context, ttl, interval time.Duration) {
+func (p *Pool) connParker(ctx context.Context, ttl, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -172,7 +166,7 @@ func (p *pool) connParker(ctx context.Context, ttl, interval time.Duration) {
 	}
 }
 
-func (p *pool) collectConns() []*conn {
+func (p *Pool) collectConns() []*conn {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 	conns := make([]*conn, 0, len(p.conns))
@@ -185,8 +179,8 @@ func (p *pool) collectConns() []*conn {
 func NewPool(
 	ctx context.Context,
 	config Config,
-) Pool {
-	p := &pool{
+) *Pool {
+	p := &Pool{
 		usages: 1,
 		config: config,
 		opts:   config.GrpcDialOptions(),

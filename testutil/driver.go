@@ -6,14 +6,12 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Operations"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Operations"
-
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/database"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 )
 
@@ -158,7 +156,7 @@ func getField(name string, src, dst interface{}) bool {
 	return fn(reflect.ValueOf(src).Elem(), strings.Split(name, ".")...)
 }
 
-type cluster struct {
+type balancerStub struct {
 	onInvoke func(
 		ctx context.Context,
 		method string,
@@ -177,48 +175,48 @@ type cluster struct {
 	) error
 }
 
-func (c *cluster) Invoke(
+func (b *balancerStub) Invoke(
 	ctx context.Context,
 	method string,
 	args interface{},
 	reply interface{},
 	opts ...grpc.CallOption,
 ) (err error) {
-	if c.onInvoke == nil {
+	if b.onInvoke == nil {
 		return fmt.Errorf("database.onInvoke() not implemented")
 	}
-	return c.onInvoke(ctx, method, args, reply, opts...)
+	return b.onInvoke(ctx, method, args, reply, opts...)
 }
 
-func (c *cluster) NewStream(
+func (b *balancerStub) NewStream(
 	ctx context.Context,
 	desc *grpc.StreamDesc,
 	method string,
 	opts ...grpc.CallOption,
 ) (_ grpc.ClientStream, err error) {
-	if c.onNewStream == nil {
+	if b.onNewStream == nil {
 		return nil, fmt.Errorf("database.onNewStream() not implemented")
 	}
-	return c.onNewStream(ctx, desc, method, opts...)
+	return b.onNewStream(ctx, desc, method, opts...)
 }
 
-func (c *cluster) Get(context.Context) (conn grpc.ClientConnInterface, err error) {
+func (b *balancerStub) Get(context.Context) (conn grpc.ClientConnInterface, err error) {
 	cc := &clientConn{
-		onInvoke:    c.onInvoke,
-		onNewStream: c.onNewStream,
+		onInvoke:    b.onInvoke,
+		onNewStream: b.onNewStream,
 	}
 	return cc, nil
 }
 
-func (c *cluster) Name() string {
+func (b *balancerStub) Name() string {
 	return "testutil.database"
 }
 
-func (c *cluster) Close(ctx context.Context) error {
-	if c.onClose == nil {
+func (b *balancerStub) Close(ctx context.Context) error {
+	if b.onClose == nil {
 		return fmt.Errorf("database.Close() not implemented")
 	}
-	return c.onClose(ctx)
+	return b.onClose(ctx)
 }
 
 type (
@@ -226,11 +224,11 @@ type (
 	NewStreamHandlers map[MethodCode]func(desc *grpc.StreamDesc) (grpc.ClientStream, error)
 )
 
-type clusterOption func(c *cluster)
+type balancerOption func(c *balancerStub)
 
-func WithInvokeHandlers(invokeHandlers InvokeHandlers) clusterOption {
-	return func(db *cluster) {
-		db.onInvoke = func(
+func WithInvokeHandlers(invokeHandlers InvokeHandlers) balancerOption {
+	return func(r *balancerStub) {
+		r.onInvoke = func(
 			ctx context.Context,
 			method string,
 			args interface{},
@@ -238,11 +236,13 @@ func WithInvokeHandlers(invokeHandlers InvokeHandlers) clusterOption {
 			opts ...grpc.CallOption,
 		) (err error) {
 			if handler, ok := invokeHandlers[Method(method).Code()]; ok {
-				result, err := handler(args)
+				var result proto.Message
+				result, err = handler(args)
 				if err != nil {
 					return xerrors.WithStackTrace(err)
 				}
-				anyResult, err := anypb.New(result)
+				var anyResult *anypb.Any
+				anyResult, err = anypb.New(result)
 				if err != nil {
 					return xerrors.WithStackTrace(err)
 				}
@@ -260,9 +260,9 @@ func WithInvokeHandlers(invokeHandlers InvokeHandlers) clusterOption {
 	}
 }
 
-func WithNewStreamHandlers(newStreamHandlers NewStreamHandlers) clusterOption {
-	return func(db *cluster) {
-		db.onNewStream = func(
+func WithNewStreamHandlers(newStreamHandlers NewStreamHandlers) balancerOption {
+	return func(r *balancerStub) {
+		r.onNewStream = func(
 			ctx context.Context,
 			desc *grpc.StreamDesc,
 			method string,
@@ -276,14 +276,14 @@ func WithNewStreamHandlers(newStreamHandlers NewStreamHandlers) clusterOption {
 	}
 }
 
-func WithClose(onClose func(ctx context.Context) error) clusterOption {
-	return func(c *cluster) {
+func WithClose(onClose func(ctx context.Context) error) balancerOption {
+	return func(c *balancerStub) {
 		c.onClose = onClose
 	}
 }
 
-func NewDB(opts ...clusterOption) database.Cluster {
-	c := &cluster{}
+func NewBalancer(opts ...balancerOption) grpc.ClientConnInterface {
+	c := &balancerStub{}
 	for _, opt := range opts {
 		opt(c)
 	}

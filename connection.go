@@ -11,12 +11,14 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 	"github.com/ydb-platform/ydb-go-sdk/v3/discovery"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/single"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
 	internalCoordination "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination"
 	coordinationConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination/config"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/database"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/credentials"
 	discoveryConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/discovery/config"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/dsn"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/endpoint"
 	internalRatelimiter "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter"
 	ratelimiterConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter/config"
 	internalScheme "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme"
@@ -25,12 +27,17 @@ import (
 	scriptingConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scripting/config"
 	internalTable "github.com/ydb-platform/ydb-go-sdk/v3/internal/table"
 	tableConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/topic/topicclientinternal"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xsql"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xsync"
 	"github.com/ydb-platform/ydb-go-sdk/v3/log"
 	"github.com/ydb-platform/ydb-go-sdk/v3/ratelimiter"
 	"github.com/ydb-platform/ydb-go-sdk/v3/scheme"
 	"github.com/ydb-platform/ydb-go-sdk/v3/scripting"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
+	"github.com/ydb-platform/ydb-go-sdk/v3/topic"
+	"github.com/ydb-platform/ydb-go-sdk/v3/topic/topicoptions"
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
@@ -40,9 +47,6 @@ import (
 // This interface is central part for access to various systems
 // embedded to ydb through one configured connection method.
 type Connection interface {
-	// ClientConnInterface provide execute unary and streaming RPC over internal balancer
-	grpc.ClientConnInterface
-
 	// Endpoint returns initial endpoint
 	Endpoint() string
 
@@ -73,46 +77,57 @@ type Connection interface {
 	// Scripting returns scripting client
 	Scripting() scripting.Client
 
+	// Topic returns topic client
+	Topic() topic.Client
+
 	// With makes child connection with the same options and another options
 	With(ctx context.Context, opts ...Option) (Connection, error)
 }
 
-// nolint: maligned
+//nolint:maligned
 type connection struct {
+	userInfo *dsn.UserInfo
+
 	opts []Option
 
 	config  config.Config
 	options []config.Option
 
-	tableOnce    sync.Once
+	tableOnce    initOnce
 	table        *internalTable.Client
 	tableOptions []tableConfig.Option
 
-	scriptingOnce    sync.Once
+	scriptingOnce    initOnce
 	scripting        *internalScripting.Client
 	scriptingOptions []scriptingConfig.Option
 
-	schemeOnce    sync.Once
+	schemeOnce    initOnce
 	scheme        *internalScheme.Client
 	schemeOptions []schemeConfig.Option
 
 	discoveryOptions []discoveryConfig.Option
 
-	coordinationOnce    sync.Once
+	coordinationOnce    initOnce
 	coordination        *internalCoordination.Client
 	coordinationOptions []coordinationConfig.Option
 
-	ratelimiterOnce    sync.Once
+	ratelimiterOnce    initOnce
 	ratelimiter        *internalRatelimiter.Client
 	ratelimiterOptions []ratelimiterConfig.Option
 
-	pool conn.Pool
+	topicOnce    initOnce
+	topic        *topicclientinternal.Client
+	topicOptions []topicoptions.TopicOption
 
-	mtx sync.Mutex
-	db  database.Connection
+	databaseSQLOptions []xsql.ConnectorOption
+
+	pool *conn.Pool
+
+	mtx      sync.Mutex
+	balancer *balancer.Balancer
 
 	children    map[uint64]Connection
-	childrenMtx sync.Mutex
+	childrenMtx xsync.Mutex
 	onClose     []func(c *connection)
 
 	panicCallback func(e interface{})
@@ -128,52 +143,23 @@ func (c *connection) Close(ctx context.Context) error {
 		}
 	}()
 
-	c.childrenMtx.Lock()
 	closers := make([]func(context.Context) error, 0)
-	for _, child := range c.children {
-		closers = append(closers, child.Close)
-	}
-	c.children = nil
-	c.childrenMtx.Unlock()
+	c.childrenMtx.WithLock(func() {
+		for _, child := range c.children {
+			closers = append(closers, child.Close)
+		}
+		c.children = nil
+	})
 
 	closers = append(
 		closers,
-		func(ctx context.Context) error {
-			c.ratelimiterOnce.Do(func() {})
-			if c.ratelimiter == nil {
-				return nil
-			}
-			return c.ratelimiter.Close(ctx)
-		},
-		func(ctx context.Context) error {
-			c.coordinationOnce.Do(func() {})
-			if c.coordination == nil {
-				return nil
-			}
-			return c.coordination.Close(ctx)
-		},
-		func(ctx context.Context) error {
-			c.schemeOnce.Do(func() {})
-			if c.scheme == nil {
-				return nil
-			}
-			return c.scheme.Close(ctx)
-		},
-		func(ctx context.Context) error {
-			c.scriptingOnce.Do(func() {})
-			if c.scripting == nil {
-				return nil
-			}
-			return c.scripting.Close(ctx)
-		},
-		func(ctx context.Context) error {
-			c.tableOnce.Do(func() {})
-			if c.table == nil {
-				return nil
-			}
-			return c.table.Close(ctx)
-		},
-		c.db.Close,
+		c.ratelimiterOnce.Close,
+		c.coordinationOnce.Close,
+		c.schemeOnce.Close,
+		c.scriptingOnce.Close,
+		c.tableOnce.Close,
+		c.topicOnce.Close,
+		c.balancer.Close,
 		c.pool.Release,
 	)
 
@@ -198,7 +184,7 @@ func (c *connection) Invoke(
 	reply interface{},
 	opts ...grpc.CallOption,
 ) (err error) {
-	return c.db.Invoke(
+	return c.balancer.Invoke(
 		conn.WithoutWrapping(ctx),
 		method,
 		args,
@@ -213,7 +199,7 @@ func (c *connection) NewStream(
 	method string,
 	opts ...grpc.CallOption,
 ) (grpc.ClientStream, error) {
-	return c.db.NewStream(
+	return c.balancer.NewStream(
 		conn.WithoutWrapping(ctx),
 		desc,
 		method,
@@ -234,9 +220,9 @@ func (c *connection) Secure() bool {
 }
 
 func (c *connection) Table() table.Client {
-	c.tableOnce.Do(func() {
+	c.tableOnce.Init(func() closeFunc {
 		c.table = internalTable.New(
-			c.db,
+			c.balancer,
 			tableConfig.New(
 				append(
 					// prepend common params from root config
@@ -247,15 +233,16 @@ func (c *connection) Table() table.Client {
 				)...,
 			),
 		)
+		return c.table.Close
 	})
 	// may be nil if driver closed early
 	return c.table
 }
 
 func (c *connection) Scheme() scheme.Client {
-	c.schemeOnce.Do(func() {
+	c.schemeOnce.Init(func() closeFunc {
 		c.scheme = internalScheme.New(
-			c.db,
+			c.balancer,
 			schemeConfig.New(
 				append(
 					// prepend common params from root config
@@ -266,15 +253,16 @@ func (c *connection) Scheme() scheme.Client {
 				)...,
 			),
 		)
+		return c.scheme.Close
 	})
 	// may be nil if driver closed early
 	return c.scheme
 }
 
 func (c *connection) Coordination() coordination.Client {
-	c.coordinationOnce.Do(func() {
+	c.coordinationOnce.Init(func() closeFunc {
 		c.coordination = internalCoordination.New(
-			c.db,
+			c.balancer,
 			coordinationConfig.New(
 				append(
 					// prepend common params from root config
@@ -285,15 +273,16 @@ func (c *connection) Coordination() coordination.Client {
 				)...,
 			),
 		)
+		return c.coordination.Close
 	})
 	// may be nil if driver closed early
 	return c.coordination
 }
 
 func (c *connection) Ratelimiter() ratelimiter.Client {
-	c.ratelimiterOnce.Do(func() {
+	c.ratelimiterOnce.Init(func() closeFunc {
 		c.ratelimiter = internalRatelimiter.New(
-			c.db,
+			c.balancer,
 			ratelimiterConfig.New(
 				append(
 					// prepend common params from root config
@@ -304,17 +293,18 @@ func (c *connection) Ratelimiter() ratelimiter.Client {
 				)...,
 			),
 		)
+		return c.ratelimiter.Close
 	})
 	// may be nil if driver closed early
 	return c.ratelimiter
 }
 
 func (c *connection) Discovery() discovery.Client {
-	return c.db.Discovery()
+	return c.balancer.Discovery()
 }
 
 func (c *connection) Scripting() scripting.Client {
-	c.scriptingOnce.Do(func() {
+	c.scriptingOnce.Init(func() closeFunc {
 		c.scripting = internalScripting.New(
 			c,
 			scriptingConfig.New(
@@ -327,16 +317,30 @@ func (c *connection) Scripting() scripting.Client {
 				)...,
 			),
 		)
+		return c.scripting.Close
 	})
 	// may be nil if driver closed early
 	return c.scripting
+}
+
+// Topic return topic client
+//
+// # Experimental
+//
+// Notice: This API is EXPERIMENTAL and may be changed or removed in a later release.
+func (c *connection) Topic() topic.Client {
+	c.topicOnce.Init(func() closeFunc {
+		c.topic = topicclientinternal.New(c.balancer, c.topicOptions...)
+		return c.topic.Close
+	})
+	return c.topic
 }
 
 // Open connects to database by DSN and return driver runtime holder
 //
 // DSN accept connection string like
 //
-//   "grpc[s]://{endpoint}/?database={database}[&param=value]"
+//	"grpc[s]://{endpoint}/{database}[?param=value]"
 //
 // See sugar.DSN helper for make dsn from endpoint and database
 func Open(ctx context.Context, dsn string, opts ...Option) (_ Connection, err error) {
@@ -371,10 +375,13 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 			opts = append(
 				opts,
 				WithLogger(
-					trace.DetailsAll,
+					trace.MatchDetails(
+						os.Getenv("YDB_LOG_DETAILS"),
+						trace.WithDefaultDetails(trace.DetailsAll),
+					),
 					WithNamespace("ydb"),
 					WithMinLevel(log.FromString(logLevel)),
-					WithNoColor(os.Getenv("YDB_LOG_NO_COLOR") != ""),
+					WithColoring(),
 				),
 			)
 		}
@@ -394,24 +401,32 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 		return nil, xerrors.WithStackTrace(errors.New("configuration: empty database"))
 	}
 
-	if single.IsSingle(c.config.Balancer()) {
-		c.discoveryOptions = append(
-			c.discoveryOptions,
-			discoveryConfig.WithInterval(0),
-		)
-	}
+	onDone := trace.DriverOnInit(
+		c.config.Trace(),
+		&ctx,
+		c.config.Endpoint(),
+		c.config.Database(),
+		c.config.Secure(),
+	)
+	defer func() {
+		onDone(err)
+	}()
 
 	if c.pool == nil {
-		c.pool = conn.NewPool(
-			ctx,
-			c.config,
-		)
+		c.pool = conn.NewPool(ctx, c.config)
 	}
 
-	c.db, err = database.New(
-		ctx,
-		c.config,
-		c.pool,
+	if c.userInfo != nil {
+		c.config = c.config.With(config.WithCredentials(
+			credentials.NewStaticCredentials(
+				c.userInfo.User, c.userInfo.Password,
+				c.pool.Get(endpoint.New(c.config.Endpoint())),
+			),
+		))
+	}
+
+	c.balancer, err = balancer.New(ctx,
+		c.config, c.pool,
 		append(
 			// prepend common params from root config
 			[]discoveryConfig.Option{
@@ -429,4 +444,37 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 	}
 
 	return c, nil
+}
+
+// GRPCConn casts ydb.Connection to grpc.ClientConnInterface for executing
+// unary and streaming RPC over internal driver balancer.
+//
+// Warning: for connect to driver-unsupported YDB services
+func GRPCConn(conn Connection) grpc.ClientConnInterface {
+	if cc, ok := conn.(*connection); ok {
+		return cc
+	}
+	return nil
+}
+
+// Helper types for closing lazy clients
+type closeFunc func(ctx context.Context) error
+
+type initOnce struct {
+	once  sync.Once
+	close closeFunc
+}
+
+func (lo *initOnce) Init(f func() closeFunc) {
+	lo.once.Do(func() {
+		lo.close = f()
+	})
+}
+
+func (lo *initOnce) Close(ctx context.Context) error {
+	lo.once.Do(func() {})
+	if lo.close == nil {
+		return nil
+	}
+	return lo.close(ctx)
 }

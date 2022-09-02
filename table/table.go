@@ -10,6 +10,7 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/backoff"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/closer"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/value"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/value/allocator"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/options"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/result"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
@@ -28,6 +29,7 @@ type TxOperation func(ctx context.Context, tx TransactionActor) error
 
 type ClosableSession interface {
 	closer.Closer
+
 	Session
 }
 
@@ -35,22 +37,30 @@ type Client interface {
 	closer.Closer
 
 	// CreateSession returns session or error for manually control of session lifecycle
-	// CreateSession do not provide retry loop for failed create session requests.
-	// Best effort policy may be implements with outer retry loop includes CreateSession call
+	//
+	// CreateSession implements internal busy loop until one of the following conditions is met:
+	// - context was canceled or deadlined
+	// - session was created
 	CreateSession(ctx context.Context, opts ...Option) (s ClosableSession, err error)
 
-	// Do provide the best effort for execute operation
+	// Do provide the best effort for execute operation.
+	//
 	// Do implements internal busy loop until one of the following conditions is met:
 	// - deadline was canceled or deadlined
 	// - retry operation returned nil as error
-	// Warning: if context without deadline or cancellation func than Do can run indefinitely
+	//
+	// Warning: if context without deadline or cancellation func than Do can run indefinitely.
 	Do(ctx context.Context, op Operation, opts ...Option) error
 
-	// DoTx provide the best effort for execute transaction
+	// DoTx provide the best effort for execute transaction.
+	//
 	// DoTx implements internal busy loop until one of the following conditions is met:
 	// - deadline was canceled or deadlined
 	// - retry operation returned nil as error
-	// DoTx makes auto begin, commit and rollback of transaction
+	//
+	// DoTx makes auto begin (with TxSettings, by default - SerializableReadWrite), commit and
+	// rollback (on error) of transaction.
+	//
 	// If op TxOperation returns nil - transaction will be committed
 	// If op TxOperation return non nil - transaction will be rollback
 	// Warning: if context without deadline or cancellation func than DoTx can run indefinitely
@@ -69,34 +79,46 @@ type Session interface {
 		path string,
 		opts ...options.CreateTableOption,
 	) (err error)
+
 	DescribeTable(
 		ctx context.Context,
 		path string,
 		opts ...options.DescribeTableOption,
 	) (desc options.Description, err error)
+
 	DropTable(
 		ctx context.Context,
 		path string,
 		opts ...options.DropTableOption,
 	) (err error)
+
 	AlterTable(
 		ctx context.Context,
 		path string,
 		opts ...options.AlterTableOption,
 	) (err error)
+
 	CopyTable(
 		ctx context.Context,
 		dst, src string,
 		opts ...options.CopyTableOption,
 	) (err error)
+
 	Explain(
 		ctx context.Context,
 		query string,
 	) (exp DataQueryExplanation, err error)
+
+	// Prepare prepares query for executing in the future
 	Prepare(
 		ctx context.Context,
 		query string,
 	) (stmt Statement, err error)
+
+	// Execute executes query.
+	//
+	// By default, Execute have a flag options.WithKeepInCache(true) if params is not empty. For redefine behavior -
+	// append option options.WithKeepInCache(false)
 	Execute(
 		ctx context.Context,
 		tx *TransactionControl,
@@ -104,34 +126,41 @@ type Session interface {
 		params *QueryParameters,
 		opts ...options.ExecuteDataQueryOption,
 	) (txr Transaction, r result.Result, err error)
+
 	ExecuteSchemeQuery(
 		ctx context.Context,
 		query string,
 		opts ...options.ExecuteSchemeQueryOption,
 	) (err error)
+
 	DescribeTableOptions(
 		ctx context.Context,
 	) (desc options.TableOptionsDescription, err error)
+
 	StreamReadTable(
 		ctx context.Context,
 		path string,
 		opts ...options.ReadTableOption,
 	) (r result.StreamResult, err error)
+
 	StreamExecuteScanQuery(
 		ctx context.Context,
 		query string,
 		params *QueryParameters,
 		opts ...options.ExecuteScanQueryOption,
 	) (_ result.StreamResult, err error)
+
 	BulkUpsert(
 		ctx context.Context,
 		table string,
 		rows types.Value,
 	) (err error)
+
 	BeginTransaction(
 		ctx context.Context,
 		tx *TransactionSettings,
 	) (x Transaction, err error)
+
 	KeepAlive(
 		ctx context.Context,
 	) error
@@ -335,15 +364,48 @@ func DefaultTxControl() *TransactionControl {
 	)
 }
 
+// SerializableReadWriteTxControl returns transaction control with serializable read-write isolation mode
+func SerializableReadWriteTxControl(opts ...TxControlOption) *TransactionControl {
+	return TxControl(
+		append([]TxControlOption{
+			BeginTx(WithSerializableReadWrite()),
+		}, opts...)...,
+	)
+}
+
+// OnlineReadOnlyTxControl returns online read-only transaction control
+func OnlineReadOnlyTxControl(opts ...TxOnlineReadOnlyOption) *TransactionControl {
+	return TxControl(
+		BeginTx(WithOnlineReadOnly(opts...)),
+		CommitTx(), // open transactions not supported for OnlineReadOnly
+	)
+}
+
+// StaleReadOnlyTxControl returns stale read-only transaction control
+func StaleReadOnlyTxControl() *TransactionControl {
+	return TxControl(
+		BeginTx(WithStaleReadOnly()),
+		CommitTx(), // open transactions not supported for StaleReadOnly
+	)
+}
+
 // QueryParameters
 
 type (
-	queryParams     map[string]*Ydb.TypedValue
+	queryParams     map[string]types.Value
 	ParameterOption func(queryParams)
 	QueryParameters struct {
 		m queryParams
 	}
 )
+
+func (qp queryParams) ToYDB(a *allocator.Allocator) map[string]*Ydb.TypedValue {
+	params := make(map[string]*Ydb.TypedValue, len(qp))
+	for k, v := range qp {
+		params[k] = value.ToYDB(v, a)
+	}
+	return params
+}
 
 func (q *QueryParameters) Params() queryParams {
 	if q == nil {
@@ -357,10 +419,7 @@ func (q *QueryParameters) Each(it func(name string, v types.Value)) {
 		return
 	}
 	for key, v := range q.m {
-		it(key, value.FromYDB(
-			v.Type,
-			v.Value,
-		))
+		it(key, v)
 	}
 }
 
@@ -372,7 +431,7 @@ func (q *QueryParameters) String() string {
 		buf.WriteString(name)
 		buf.WriteByte(')')
 		buf.WriteByte('(')
-		value.WriteValueStringTo(&buf, v)
+		buf.WriteString(v.String())
 		buf.WriteString("))")
 	})
 	buf.WriteByte(')')
@@ -394,8 +453,16 @@ func (q *QueryParameters) Add(opts ...ParameterOption) {
 }
 
 func ValueParam(name string, v types.Value) ParameterOption {
+	switch len(name) {
+	case 0:
+		panic("empty name")
+	default:
+		if name[0] != '$' {
+			name = "$" + name
+		}
+	}
 	return func(q queryParams) {
-		q[name] = value.ToYDB(v)
+		q[name] = v
 	}
 }
 

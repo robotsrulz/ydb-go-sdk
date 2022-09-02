@@ -1,21 +1,32 @@
 # `ydb-go-sdk` - native Go's driver for [YDB](https://github.com/ydb-platform/ydb)
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/ydb-platform/ydb/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/ydb-platform/ydb-go-sdk.svg?style=flat-square)](https://github.com/ydb-platform/ydb-go-sdk/releases)
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/ydb-platform/ydb-go-sdk/v3)](https://pkg.go.dev/github.com/ydb-platform/ydb-go-sdk/v3)
 ![tests](https://github.com/ydb-platform/ydb-go-sdk/workflows/tests/badge.svg?branch=master)
 ![lint](https://github.com/ydb-platform/ydb-go-sdk/workflows/lint/badge.svg?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ydb-platform/ydb-go-sdk/v3)](https://goreportcard.com/report/github.com/ydb-platform/ydb-go-sdk/v3)
 [![codecov](https://codecov.io/gh/ydb-platform/ydb-go-sdk/branch/master/graph/badge.svg?precision=2)](https://app.codecov.io/gh/ydb-platform/ydb-go-sdk)
 ![Code lines](https://sloc.xyz/github/ydb-platform/ydb-go-sdk/?category=code)
-![Comments](https://sloc.xyz/github/ydb-platform/ydb-go-sdk/?category=comments)
+[![View examples](https://img.shields.io/badge/learn-examples-brightgreen.svg)](https://github.com/ydb-platform/ydb-go-examples)
+[![Telegram](https://img.shields.io/badge/chat-on%20Telegram-2ba2d9.svg)](https://t.me/YDBPlatform)
+[![WebSite](https://img.shields.io/badge/website-ydb.tech-blue.svg)](https://ydb.tech)
 
-Supports `table`, `discovery`, `coordination`, `ratelimiter`, `scheme` and `scripting` clients for `YDB`. 
-`YDB` is an open-source Distributed SQL Database that combines high availability and scalability with strict consistency and ACID transactions.
+Supports `table`, `discovery`, `coordination`, `ratelimiter`, `scheme`, `scripting` and `topic` clients for [YDB](ydb.tech).
+`YDB` is an open-source Distributed SQL Database that combines high availability and scalability with strict consistency and [ACID](https://en.wikipedia.org/wiki/ACID) transactions.
+`YDB` was created primarily for [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) workloads and supports some [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) scenarious.
+
+## Installation
+
+```sh
+go get -u github.com/ydb-platform/ydb-go-sdk/v3
+```
 
 ## Example Usage <a name="example"></a>
 
 * connect to YDB
 ```golang
-db, err := ydb.Open(ctx, "grpcs://localhost:2135/?database=/local")
+db, err := ydb.Open(ctx, "grpcs://localhost:2135/local")
 if err != nil {
     log.Fatal(err)
 }
@@ -32,11 +43,11 @@ queryErr := db.Table().Do(ctx, func(ctx context.Context, s table.Session) (err e
     }
     defer res.Close()
     if err = res.NextResultSetErr(ctx); err != nil {
-        return err 
+        return err
     }
     for res.NextRow() {
-        var id    int32   
-        var myStr string 
+        var id    int32
+        var myStr string
         err = res.ScanNamed(named.Required("id", &id),named.OptionalWithDefault("myStr", &myStr))
         if err != nil {
             log.Fatal(err)
@@ -49,14 +60,45 @@ if queryErr != nil {
     log.Fatal(queryErr)
 }
 ```
+* usage with `database/sql` (see additional docs in [SQL.md](SQL.md) )
+```golang
+import (
+    "context"
+    "database/sql"
+    "log"
+
+    _ "github.com/ydb-platform/ydb-go-sdk/v3"
+)
+
+...
+
+db, err := sql.Open("ydb", "grpcs://localhost:2135/local")
+if err != nil {
+    log.Fatal(err)
+}
+defer db.Close() // cleanup resources
+var (
+    id    int32
+    myStr string
+)
+row := db.QueryRowContext(context.TODO(), `SELECT 42 as id, "my string" as myStr`)
+if err = row.Scan(&id, &myStr); err != nil {
+    log.Printf("select failed: %v", err)
+    return
+}
+log.Printf("id = %d, myStr = \"%s\"", id, myStr)
+```
+
 
 More examples of usage placed in [examples](https://github.com/ydb-platform/ydb-go-examples) repository.
 
 ## Credentials <a name="credentials"></a>
 
-Driver contains two options for making simple `credentials.Credentials`:
-- `ydb.WithAnonymousCredentials()`
+Driver implements several ways for making credentials for `YDB`:
+- `ydb.WithAnonymousCredentials()` (enabled by default unless otherwise specified)
 - `ydb.WithAccessTokenCredentials("token")`
+- `ydb.WithStaticCredentials("user", "password")`, 
+- as part of connection string, like as `grpcs://user:password@endpoint/database`
 
 Another variants of `credentials.Credentials` object provides with external packages:
 
@@ -87,7 +129,6 @@ Next packages provide debug tooling:
 |----------------------------------|-----------|---------|--------------------------------------------------------------------------------------------------------------------------|
 | `YDB_SSL_ROOT_CERTIFICATES_FILE` | `string`  |         | path to certificates file                                                                                                |
 | `YDB_LOG_SEVERITY_LEVEL`         | `string`  | `quiet` | severity logging level of internal driver logger. Supported: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `quiet` |
-| `YDB_LOG_NO_COLOR`               | `bool`    | `false` | set any non empty value to disable colouring logs with internal driver logger                                            |
+| `YDB_LOG_DETAILS`                | `string`  | `.*`    | regexp for lookup internal logger logs                                                                                   |
 | `GRPC_GO_LOG_VERBOSITY_LEVEL`    | `integer` |         | set to `99` to see grpc logs                                                                                             |
 | `GRPC_GO_LOG_SEVERITY_LEVEL`     | `string`  |         | set to `info` to see grpc logs                                                                                           |
-

@@ -173,7 +173,7 @@ func (s *rawConverter) Timestamp() (v time.Time) {
 
 func (s *rawConverter) Interval() (v time.Duration) {
 	s.unwrap()
-	return timeutil.UnmarshalInterval(s.int64())
+	return timeutil.MicrosecondsToDuration(s.int64())
 }
 
 func (s *rawConverter) TzDate() (v time.Time) {
@@ -544,7 +544,7 @@ func (s *rawConverter) IsDecimal() bool {
 }
 
 func isEqualDecimal(d *Ydb.DecimalType, t types.Type) bool {
-	w := t.(value.DecimalType)
+	w := t.(*value.DecimalType)
 	return d.Precision == w.Precision && d.Scale == w.Scale
 }
 

@@ -3,6 +3,11 @@ package types
 import (
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
+
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/value"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/value/allocator"
 )
 
 func TestNullable(t *testing.T) {
@@ -217,10 +222,10 @@ func TestNullable(t *testing.T) {
 			exp:  NullValue(TypeTzDate),
 		},
 		{
-			name: "interval from int32",
+			name: "interval from int64",
 			t:    TypeInterval,
 			v:    func(v int64) *int64 { return &v }(123),
-			exp:  OptionalValue(IntervalValue(123)),
+			exp:  OptionalValue(IntervalValueFromMicroseconds(123)),
 		},
 		{
 			name: "interval from time.Time",
@@ -374,8 +379,10 @@ func TestNullable(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			a := allocator.New()
+			defer a.Free()
 			v := Nullable(test.t, test.v)
-			if v.String() != test.exp.String() {
+			if !proto.Equal(value.ToYDB(v, a), value.ToYDB(test.exp, a)) {
 				t.Fatalf("unexpected value: %v, exp: %v", v, test.exp)
 			}
 		})

@@ -3,136 +3,104 @@ package balancers
 import (
 	"strings"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/multi"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/rr"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/single"
+	balancerConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
 )
 
-func RoundRobin() balancer.Balancer {
-	return rr.RoundRobin(nil)
+// Deprecated: RoundRobin is RandomChoice now
+func RoundRobin() *balancerConfig.Config {
+	return &balancerConfig.Config{}
 }
 
-func RandomChoice() balancer.Balancer {
-	return rr.RandomChoice(nil)
+func RandomChoice() *balancerConfig.Config {
+	return &balancerConfig.Config{}
 }
 
-func SingleConn() balancer.Balancer {
-	return single.Balancer(nil)
+func SingleConn() *balancerConfig.Config {
+	return &balancerConfig.Config{
+		SingleConn: true,
+	}
 }
 
 // PreferLocalDC creates balancer which use endpoints only in location such as initial endpoint location
 // Balancer "balancer" defines balancing algorithm between endpoints selected with filter by location
-func PreferLocalDC(balancer balancer.Balancer) balancer.Balancer {
-	return Prefer(
-		balancer,
-		func(endpoint Endpoint) bool {
-			return endpoint.LocalDC()
-		},
-	)
+// PreferLocalDC balancer try to autodetect local DC from client side.
+func PreferLocalDC(balancer *balancerConfig.Config) *balancerConfig.Config {
+	balancer.IsPreferConn = func(info balancerConfig.Info, c conn.Conn) bool {
+		return c.Endpoint().Location() == info.SelfLocation
+	}
+	balancer.DetectlocalDC = true
+	return balancer
 }
 
 // PreferLocalDCWithFallBack creates balancer which use endpoints only in location such as initial endpoint location
 // Balancer "balancer" defines balancing algorithm between endpoints selected with filter by location
 // If filter returned zero endpoints from all discovery endpoints list - used all endpoint instead
-func PreferLocalDCWithFallBack(balancer balancer.Balancer) balancer.Balancer {
-	return PreferWithFallback(
-		balancer,
-		func(endpoint Endpoint) bool {
-			return endpoint.LocalDC()
-		},
-	)
+func PreferLocalDCWithFallBack(balancer *balancerConfig.Config) *balancerConfig.Config {
+	balancer = PreferLocalDC(balancer)
+	balancer.AllowFalback = true
+	return balancer
 }
 
 // PreferLocations creates balancer which use endpoints only in selected locations (such as "ABC", "DEF", etc.)
 // Balancer "balancer" defines balancing algorithm between endpoints selected with filter by location
-func PreferLocations(balancer balancer.Balancer, locations ...string) balancer.Balancer {
+func PreferLocations(balancer *balancerConfig.Config, locations ...string) *balancerConfig.Config {
 	if len(locations) == 0 {
 		panic("empty list of locations")
 	}
 	for i := range locations {
 		locations[i] = strings.ToUpper(locations[i])
 	}
-	return Prefer(
-		balancer,
-		func(endpoint Endpoint) bool {
-			location := strings.ToUpper(endpoint.Location())
-			for _, l := range locations {
-				if location == l {
-					return true
-				}
+	balancer.IsPreferConn = func(_ balancerConfig.Info, c conn.Conn) bool {
+		location := strings.ToUpper(c.Endpoint().Location())
+		for _, l := range locations {
+			if location == l {
+				return true
 			}
-			return false
-		},
-	)
+		}
+		return false
+	}
+	return balancer
 }
 
 // PreferLocationsWithFallback creates balancer which use endpoints only in selected locations
 // Balancer "balancer" defines balancing algorithm between endpoints selected with filter by location
 // If filter returned zero endpoints from all discovery endpoints list - used all endpoint instead
-func PreferLocationsWithFallback(balancer balancer.Balancer, locations ...string) balancer.Balancer {
-	if len(locations) == 0 {
-		panic("empty list of locations")
-	}
-	for i := range locations {
-		locations[i] = strings.ToUpper(locations[i])
-	}
-	return PreferWithFallback(
-		balancer,
-		func(endpoint Endpoint) bool {
-			location := strings.ToUpper(endpoint.Location())
-			for _, l := range locations {
-				if location == l {
-					return true
-				}
-			}
-			return false
-		},
-	)
+func PreferLocationsWithFallback(balancer *balancerConfig.Config, locations ...string) *balancerConfig.Config {
+	balancer = PreferLocations(balancer, locations...)
+	balancer.AllowFalback = true
+	return balancer
 }
 
 type Endpoint interface {
 	NodeID() uint32
 	Address() string
 	Location() string
+
+	// Deprecated: LocalDC check "local" by compare endpoint location with discovery "selflocation" field.
+	// It work good only if connection url always point to local dc.
 	LocalDC() bool
 }
 
 // Prefer creates balancer which use endpoints by filter
 // Balancer "balancer" defines balancing algorithm between endpoints selected with filter
-func Prefer(balancer balancer.Balancer, filter func(endpoint Endpoint) bool) balancer.Balancer {
-	return multi.Balancer(
-		multi.WithBalancer(
-			balancer,
-			func(cc conn.Conn) bool {
-				return filter(cc.Endpoint())
-			},
-		),
-	)
+func Prefer(balancer *balancerConfig.Config, filter func(endpoint Endpoint) bool) *balancerConfig.Config {
+	balancer.IsPreferConn = func(_ balancerConfig.Info, c conn.Conn) bool {
+		return filter(c.Endpoint())
+	}
+	return balancer
 }
 
 // PreferWithFallback creates balancer which use endpoints by filter
 // Balancer "balancer" defines balancing algorithm between endpoints selected with filter
 // If filter returned zero endpoints from all discovery endpoints list - used all endpoint instead
-func PreferWithFallback(balancer balancer.Balancer, filter func(endpoint Endpoint) bool) balancer.Balancer {
-	return multi.Balancer(
-		multi.WithBalancer(
-			balancer,
-			func(cc conn.Conn) bool {
-				return filter(cc.Endpoint())
-			},
-		),
-		multi.WithBalancer(
-			balancer,
-			func(cc conn.Conn) bool {
-				return !filter(cc.Endpoint())
-			},
-		),
-	)
+func PreferWithFallback(balancer *balancerConfig.Config, filter func(endpoint Endpoint) bool) *balancerConfig.Config {
+	balancer = Prefer(balancer, filter)
+	balancer.AllowFalback = true
+	return balancer
 }
 
 // Default balancer used by default
-func Default() balancer.Balancer {
+func Default() *balancerConfig.Config {
 	return RandomChoice()
 }

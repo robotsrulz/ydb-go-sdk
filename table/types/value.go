@@ -11,7 +11,7 @@ import (
 )
 
 type Value interface {
-	value.V
+	value.Value
 }
 
 func BoolValue(v bool) Value { return value.BoolValue(v) }
@@ -42,61 +42,120 @@ func DatetimeValue(v uint32) Value { return value.DatetimeValue(v) }
 
 func TimestampValue(v uint64) Value { return value.TimestampValue(v) }
 
+// IntervalValueFromMicroseconds makes Value from given microseconds value
+func IntervalValueFromMicroseconds(v int64) Value { return value.IntervalValue(v) }
+
+// IntervalValue makes Value from given microseconds value
+//
+// Deprecated: use IntervalValueFromMicroseconds instead
 func IntervalValue(v int64) Value { return value.IntervalValue(v) }
 
+// TzDateValue makes TzDate value from string
 func TzDateValue(v string) Value { return value.TzDateValue(v) }
 
+// TzDatetimeValue makes TzDatetime value from string
 func TzDatetimeValue(v string) Value { return value.TzDatetimeValue(v) }
 
+// TzTimestampValue makes TzTimestamp value from string
 func TzTimestampValue(v string) Value { return value.TzTimestampValue(v) }
 
+// DateValueFromTime makes Date value from time.Time
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func DateValueFromTime(v time.Time) Value { return value.DateValue(timeutil.MarshalDate(v)) }
 
+// DatetimeValueFromTime makes Datetime value from time.Time
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func DatetimeValueFromTime(v time.Time) Value {
 	return value.DatetimeValue(timeutil.MarshalDatetime(v))
 }
 
+// TimestampValueFromTime makes Timestamp value from time.Time
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func TimestampValueFromTime(v time.Time) Value {
 	return value.TimestampValue(timeutil.MarshalTimestamp(v))
 }
 
+// IntervalValueFromDuration makes Interval value from time.Duration
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func IntervalValueFromDuration(v time.Duration) Value {
-	return value.IntervalValue(timeutil.MarshalInterval(v))
+	return value.IntervalValue(timeutil.DurationToMicroseconds(v))
 }
 
+// TzDateValueFromTime makes TzDate value from time.Time
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func TzDateValueFromTime(v time.Time) Value { return value.TzDateValue(timeutil.MarshalTzDate(v)) }
 
+// TzDatetimeValueFromTime makes TzDatetime value from time.Time
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func TzDatetimeValueFromTime(v time.Time) Value {
 	return value.TzDatetimeValue(timeutil.MarshalTzDatetime(v))
 }
 
+// TzTimestampValueFromTime makes TzTimestamp value from time.Time
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func TzTimestampValueFromTime(v time.Time) Value {
 	return value.TzTimestampValue(timeutil.MarshalTzTimestamp(v))
 }
 
 func StringValue(v []byte) Value { return value.StringValue(v) }
 
+func BytesValue(v []byte) Value { return value.StringValue(v) }
+
+func BytesValueFromString(v string) Value { return value.StringValue([]byte(v)) }
+
+// StringValueFromString makes String value from string
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func StringValueFromString(v string) Value { return value.StringValue([]byte(v)) }
 
 func UTF8Value(v string) Value { return value.UTF8Value(v) }
 
+func TextValue(v string) Value { return value.UTF8Value(v) }
+
 func YSONValue(v string) Value { return value.YSONValue(v) }
 
+// YSONValueFromBytes makes YSON value from bytes
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func YSONValueFromBytes(v []byte) Value { return value.YSONValue(string(v)) }
 
 func JSONValue(v string) Value { return value.JSONValue(v) }
 
+// JSONValueFromBytes makes JSON value from bytes
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func JSONValueFromBytes(v []byte) Value { return value.JSONValue(string(v)) }
 
 func UUIDValue(v [16]byte) Value { return value.UUIDValue(v) }
 
 func JSONDocumentValue(v string) Value { return value.JSONDocumentValue(v) }
 
+// JSONDocumentValueFromBytes makes JSONDocument value from bytes
+//
+// Warning: all *From* helpers will be removed at next major release
+// (functional will be implements with go1.18 type lists)
 func JSONDocumentValueFromBytes(v []byte) Value { return value.JSONDocumentValue(string(v)) }
 
 func DyNumberValue(v string) Value { return value.DyNumberValue(v) }
 
-func VoidValue() Value { return value.VoidValue }
+func VoidValue() Value { return value.VoidValue() }
 
 func NullValue(t Type) Value { return value.NullValue(t) }
 
@@ -123,50 +182,70 @@ func (d *Decimal) BigInt() *big.Int {
 // DecimalValue creates decimal value of given types t and value v.
 // Note that Decimal.Bytes interpreted as big-endian int128.
 func DecimalValue(v *Decimal) Value {
-	t := DecimalTypeFromDecimal(v)
-	return value.DecimalValue(t, v.Bytes)
+	return value.DecimalValue(v.Bytes, v.Precision, v.Scale)
 }
 
 func DecimalValueFromBigInt(v *big.Int, precision, scale uint32) Value {
 	b := decimal.BigIntToByte(v, precision, scale)
-	t := DecimalType(precision, scale)
-	return value.DecimalValue(t, b)
+	return value.DecimalValue(b, precision, scale)
 }
 
 func TupleValue(vs ...Value) Value {
-	return value.TupleValue(len(vs), func(i int) value.V {
-		return vs[i]
-	})
+	return value.TupleValue(func() (vv []value.Value) {
+		for _, v := range vs {
+			vv = append(vv, v)
+		}
+		return vv
+	}()...)
 }
 
 func ListValue(vs ...Value) Value {
-	return value.ListValue(len(vs), func(i int) value.V {
-		return vs[i]
-	})
+	return value.ListValue(func() (vv []value.Value) {
+		for _, v := range vs {
+			vv = append(vv, v)
+		}
+		return vv
+	}()...)
 }
 
-type tStructValueProto value.StructValueProto
+type structValueFields struct {
+	fields []value.StructValueField
+}
 
-type StructValueOption func(*tStructValueProto)
+type StructValueOption func(*structValueFields)
 
 func StructFieldValue(name string, v Value) StructValueOption {
-	return func(p *tStructValueProto) {
-		(*value.StructValueProto)(p).Add(name, v)
+	return func(t *structValueFields) {
+		t.fields = append(t.fields, value.StructValueField{Name: name, V: v})
 	}
 }
 
 func StructValue(opts ...StructValueOption) Value {
-	var p tStructValueProto
+	var p structValueFields
 	for _, opt := range opts {
 		opt(&p)
 	}
-	return value.StructValue((*value.StructValueProto)(&p))
+	return value.StructValue(p.fields...)
 }
 
-func DictValue(pairs ...Value) Value {
-	return value.DictValue(len(pairs), func(i int) value.V {
-		return pairs[i]
-	})
+type dictValueFields struct {
+	fields []value.DictValueField
+}
+
+type DictValueOption func(*dictValueFields)
+
+func DictFieldValue(k, v Value) DictValueOption {
+	return func(t *dictValueFields) {
+		t.fields = append(t.fields, value.DictValueField{K: k, V: v})
+	}
+}
+
+func DictValue(opts ...DictValueOption) Value {
+	var p dictValueFields
+	for _, opt := range opts {
+		opt(&p)
+	}
+	return value.DictValue(p.fields...)
 }
 
 func VariantValue(v Value, i uint32, variantT Type) Value {
@@ -334,11 +413,21 @@ func NullableTzTimestampValueFromTime(v *time.Time) Value {
 	return OptionalValue(TzTimestampValueFromTime(*v))
 }
 
+// NullableIntervalValue makes Value which maybe nil or valued
+//
+// Deprecated: use NullableIntervalValueFromMicroseconds instead
 func NullableIntervalValue(v *int64) Value {
 	if v == nil {
 		return NullValue(TypeInterval)
 	}
 	return OptionalValue(IntervalValue(*v))
+}
+
+func NullableIntervalValueFromMicroseconds(v *int64) Value {
+	if v == nil {
+		return NullValue(TypeInterval)
+	}
+	return OptionalValue(IntervalValueFromMicroseconds(*v))
 }
 
 func NullableIntervalValueFromDuration(v *time.Duration) Value {
@@ -348,11 +437,21 @@ func NullableIntervalValueFromDuration(v *time.Duration) Value {
 	return OptionalValue(IntervalValueFromDuration(*v))
 }
 
+// NullableStringValue
+//
+// Deprecated: use NullableBytesValue instead
 func NullableStringValue(v *[]byte) Value {
 	if v == nil {
 		return NullValue(TypeString)
 	}
 	return OptionalValue(StringValue(*v))
+}
+
+func NullableBytesValue(v *[]byte) Value {
+	if v == nil {
+		return NullValue(TypeBytes)
+	}
+	return OptionalValue(BytesValue(*v))
 }
 
 func NullableStringValueFromString(v *string) Value {
@@ -362,11 +461,25 @@ func NullableStringValueFromString(v *string) Value {
 	return OptionalValue(StringValueFromString(*v))
 }
 
+func NullableBytesValueFromString(v *string) Value {
+	if v == nil {
+		return NullValue(TypeBytes)
+	}
+	return OptionalValue(BytesValueFromString(*v))
+}
+
 func NullableUTF8Value(v *string) Value {
 	if v == nil {
 		return NullValue(TypeUTF8)
 	}
 	return OptionalValue(UTF8Value(*v))
+}
+
+func NullableTextValue(v *string) Value {
+	if v == nil {
+		return NullValue(TypeText)
+	}
+	return OptionalValue(TextValue(*v))
 }
 
 func NullableYSONValue(v *string) Value {
@@ -427,7 +540,8 @@ func NullableDyNumberValue(v *string) Value {
 
 // Nullable makes optional value from nullable type
 // Warning: type interface will be replaced in the future with typed parameters pattern from go1.18
-// nolint:gocyclo
+//
+//nolint:gocyclo
 func Nullable(t Type, v interface{}) Value {
 	switch t {
 	case TypeBool:
@@ -459,7 +573,7 @@ func Nullable(t Type, v interface{}) Value {
 		case *time.Time:
 			return NullableDateValueFromTime(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeDate", tt))
 		}
 	case TypeDatetime:
 		switch tt := v.(type) {
@@ -468,7 +582,7 @@ func Nullable(t Type, v interface{}) Value {
 		case *time.Time:
 			return NullableDatetimeValueFromTime(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeDatetime", tt))
 		}
 	case TypeTimestamp:
 		switch tt := v.(type) {
@@ -477,16 +591,16 @@ func Nullable(t Type, v interface{}) Value {
 		case *time.Time:
 			return NullableTimestampValueFromTime(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeTimestamp", tt))
 		}
 	case TypeInterval:
 		switch tt := v.(type) {
 		case *int64:
-			return NullableIntervalValue(tt)
+			return NullableIntervalValueFromMicroseconds(tt)
 		case *time.Duration:
 			return NullableIntervalValueFromDuration(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeInterval", tt))
 		}
 	case TypeTzDate:
 		switch tt := v.(type) {
@@ -495,7 +609,7 @@ func Nullable(t Type, v interface{}) Value {
 		case *time.Time:
 			return NullableTzDateValueFromTime(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeTzDate", tt))
 		}
 	case TypeTzDatetime:
 		switch tt := v.(type) {
@@ -504,7 +618,7 @@ func Nullable(t Type, v interface{}) Value {
 		case *time.Time:
 			return NullableTzDatetimeValueFromTime(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeTzDatetime", tt))
 		}
 	case TypeTzTimestamp:
 		switch tt := v.(type) {
@@ -513,23 +627,23 @@ func Nullable(t Type, v interface{}) Value {
 		case *time.Time:
 			return NullableTzTimestampValueFromTime(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeTzTimestamp", tt))
 		}
-	case TypeString:
+	case TypeBytes:
 		switch tt := v.(type) {
 		case *[]byte:
-			return NullableStringValue(tt)
+			return NullableBytesValue(tt)
 		case *string:
 			return NullableStringValueFromString(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeString", tt))
 		}
 	case TypeUTF8:
 		switch tt := v.(type) {
 		case *string:
 			return NullableUTF8Value(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeUTF8", tt))
 		}
 	case TypeYSON:
 		switch tt := v.(type) {
@@ -538,7 +652,7 @@ func Nullable(t Type, v interface{}) Value {
 		case *[]byte:
 			return NullableYSONValueFromBytes(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeYSON", tt))
 		}
 	case TypeJSON:
 		switch tt := v.(type) {
@@ -547,14 +661,14 @@ func Nullable(t Type, v interface{}) Value {
 		case *[]byte:
 			return NullableJSONValueFromBytes(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeJSON", tt))
 		}
 	case TypeUUID:
 		switch tt := v.(type) {
 		case *[16]byte:
 			return NullableUUIDValue(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeUUID", tt))
 		}
 	case TypeJSONDocument:
 		switch tt := v.(type) {
@@ -563,16 +677,16 @@ func Nullable(t Type, v interface{}) Value {
 		case *[]byte:
 			return NullableJSONDocumentValueFromBytes(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeJSONDocument", tt))
 		}
 	case TypeDyNumber:
 		switch tt := v.(type) {
 		case *string:
 			return NullableDyNumberValue(tt)
 		default:
-			panic(fmt.Sprintf("unsupported %s argument type: %T", t.String(), tt))
+			panic(fmt.Sprintf("unsupported type conversion from %T to TypeDyNumber", tt))
 		}
 	default:
-		panic(fmt.Sprintf("unsupported type: %s", t.String()))
+		panic(fmt.Sprintf("unsupported type: %T", t))
 	}
 }

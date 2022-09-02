@@ -1,22 +1,17 @@
 package config
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"net"
 	"time"
 
 	"google.golang.org/grpc"
 	grpcCodes "google.golang.org/grpc/codes"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/balancers"
 	"github.com/ydb-platform/ydb-go-sdk/v3/credentials"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer"
+	balancerConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/meta"
-	builder "github.com/ydb-platform/ydb-go-sdk/v3/internal/xnet"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xresolver"
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
@@ -24,19 +19,18 @@ import (
 type Config struct {
 	config.Common
 
-	trace         trace.Driver
-	dialTimeout   time.Duration
-	connectionTTL time.Duration
-	balancer      balancer.Balancer
-	secure        bool
-	endpoint      string
-	database      string
-	requestsType  string
-	userAgent     string
-	grpcOptions   []grpc.DialOption
-	credentials   credentials.Credentials
-	tlsConfig     *tls.Config
-	meta          meta.Meta
+	trace          trace.Driver
+	dialTimeout    time.Duration
+	connectionTTL  time.Duration
+	balancerConfig *balancerConfig.Config
+	secure         bool
+	endpoint       string
+	database       string
+	metaOptions    []meta.Option
+	grpcOptions    []grpc.DialOption
+	credentials    credentials.Credentials
+	tlsConfig      *tls.Config
+	meta           meta.Meta
 
 	excludeGRPCCodesForPessimization []grpcCodes.Code
 }
@@ -91,12 +85,6 @@ func (c Config) Database() string {
 	return c.database
 }
 
-// Credentials is a ydb client credentials.
-// In most cases Credentials are required.
-func (c Config) Credentials() credentials.Credentials {
-	return c.credentials
-}
-
 // Trace contains driver tracing options.
 func (c Config) Trace() trace.Driver {
 	return c.trace
@@ -104,14 +92,8 @@ func (c Config) Trace() trace.Driver {
 
 // Balancer is an optional configuration related to selected balancer.
 // That is, some balancing methods allow to be configured.
-func (c Config) Balancer() balancer.Balancer {
-	return c.balancer
-}
-
-// RequestsType set an additional type hint to all requests.
-// It is needed only for debug purposes and advanced cases.
-func (c Config) RequestsType() string {
-	return c.requestsType
+func (c Config) Balancer() *balancerConfig.Config {
+	return c.balancerConfig
 }
 
 type Option func(c *Config)
@@ -168,7 +150,7 @@ func WithTrace(t trace.Driver, opts ...trace.DriverComposeOption) Option {
 
 func WithUserAgent(userAgent string) Option {
 	return func(c *Config) {
-		c.userAgent = userAgent
+		c.metaOptions = append(c.metaOptions, meta.WithUserAgentOption(userAgent))
 	}
 }
 
@@ -228,15 +210,15 @@ func WithDialTimeout(timeout time.Duration) Option {
 	}
 }
 
-func WithBalancer(balancer balancer.Balancer) Option {
+func WithBalancer(balancer *balancerConfig.Config) Option {
 	return func(c *Config) {
-		c.balancer = balancer
+		c.balancerConfig = balancer
 	}
 }
 
 func WithRequestsType(requestsType string) Option {
 	return func(c *Config) {
-		c.requestsType = requestsType
+		c.metaOptions = append(c.metaOptions, meta.WithRequestTypeOption(requestsType))
 	}
 }
 
@@ -254,6 +236,7 @@ func WithTLSSInsecureSkipVerify() Option {
 	}
 }
 
+// WithGrpcOptions appends custom grpc dial options to defaults
 func WithGrpcOptions(option ...grpc.DialOption) Option {
 	return func(c *Config) {
 		c.grpcOptions = append(c.grpcOptions, option...)
@@ -271,74 +254,28 @@ func ExcludeGRPCCodesForPessimization(codes ...grpcCodes.Code) Option {
 
 func New(opts ...Option) Config {
 	c := defaultConfig()
+
 	for _, o := range opts {
 		o(&c)
 	}
-	c.grpcOptions = append(
-		c.grpcOptions,
-		grpcCredentials(
-			c.secure,
-			c.tlsConfig,
-		),
-	)
+
+	c.grpcOptions = append(c.grpcOptions, grpcOptions(c.trace, c.secure, c.tlsConfig)...)
+
+	c.meta = meta.New(c.database, c.credentials, c.trace, c.metaOptions...)
+
+	return c
+}
+
+// With makes copy of current Config with specified options
+func (c Config) With(opts ...Option) Config {
+	for _, o := range opts {
+		o(&c)
+	}
 	c.meta = meta.New(
 		c.database,
 		c.credentials,
 		c.trace,
-		c.requestsType,
-		c.userAgent,
+		c.metaOptions...,
 	)
 	return c
-}
-
-func certPool() *x509.CertPool {
-	certPool, err := x509.SystemCertPool()
-	if err == nil {
-		return certPool
-	}
-	return x509.NewCertPool()
-}
-
-func defaultTLSConfig() *tls.Config {
-	return &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		RootCAs:    certPool(),
-	}
-}
-
-func defaultConfig() (c Config) {
-	return Config{
-		credentials: credentials.NewAnonymousCredentials(
-			credentials.WithSourceInfo("default"),
-		),
-		balancer:  balancers.Default(),
-		tlsConfig: defaultTLSConfig(),
-		grpcOptions: []grpc.DialOption{
-			grpc.WithContextDialer(
-				func(ctx context.Context, address string) (net.Conn, error) {
-					return builder.New(
-						ctx,
-						address,
-						c.trace,
-					)
-				},
-			),
-			grpc.WithKeepaliveParams(
-				DefaultGrpcConnectionPolicy,
-			),
-			grpc.WithDefaultServiceConfig(`{
-				"loadBalancingPolicy": "round_robin"
-			}`),
-			grpc.WithDefaultCallOptions(
-				grpc.MaxCallRecvMsgSize(DefaultGRPCMsgSize),
-				grpc.MaxCallSendMsgSize(DefaultGRPCMsgSize),
-			),
-			grpc.WithResolvers(
-				xresolver.New("", c.trace),
-				xresolver.New("ydb", c.trace),
-				xresolver.New("grpc", c.trace),
-				xresolver.New("grpcs", c.trace),
-			),
-		},
-	}
 }
